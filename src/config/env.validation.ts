@@ -17,6 +17,10 @@ export const envSchema = z.object({
     .default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   API_PREFIX: z.string().default('api'),
+  API_VERSION: z.string().default('v1'),
+
+  // API docs (Swagger)
+  SWAGGER_PATH: z.string().default('docs'),
 
   // CORS / frontend origin
   FRONTEND_ORIGIN: z.string().default('*'),

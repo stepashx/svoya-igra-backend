@@ -65,4 +65,10 @@ describe('validateEnv', () => {
       validateEnv({ ...requiredEnv, LATE_PENALTY: '3' }).LATE_PENALTY,
     ).toBe(3);
   });
+
+  it('defaults API version and Swagger docs path', () => {
+    const env = validateEnv(requiredEnv);
+    expect(env.API_VERSION).toBe('v1');
+    expect(env.SWAGGER_PATH).toBe('docs');
+  });
 });

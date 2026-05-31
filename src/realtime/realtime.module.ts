@@ -1,11 +1,17 @@
 import { Module } from '@nestjs/common';
+import { REALTIME_EVENTS_PORT } from '../core/ports/realtime-events.port';
+import { RealtimeGateway } from './realtime.gateway';
 
 /**
- * Realtime transport shell (Stage 3A placeholder).
- *
- * Reserved location for the WebSocket gateway implementing RealtimeEventsPort
- * (transport only). The base gateway, room-grouping, naming convention, and
- * reconnect seam arrive in a later Stage 3 prompt. No game events here.
+ * Realtime transport area. Provides the base WebSocket gateway and binds it as
+ * the RealtimeEventsPort implementation so future application code can broadcast
+ * through the port (never the gateway directly). Transport only — no game events.
  */
-@Module({})
+@Module({
+  providers: [
+    RealtimeGateway,
+    { provide: REALTIME_EVENTS_PORT, useExisting: RealtimeGateway },
+  ],
+  exports: [REALTIME_EVENTS_PORT],
+})
 export class RealtimeModule {}

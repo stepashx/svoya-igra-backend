@@ -1,4 +1,4 @@
-import { Provider } from '@nestjs/common';
+import { Logger, Provider } from '@nestjs/common';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { AppConfigService } from '../../config/app-config.service';
@@ -13,8 +13,16 @@ export const databaseProviders: Provider[] = [
   {
     provide: DATABASE_POOL,
     inject: [AppConfigService],
-    useFactory: (config: AppConfigService): Pool =>
-      new Pool({ connectionString: config.database.url }),
+    useFactory: (config: AppConfigService): Pool => {
+      const pool = new Pool({ connectionString: config.database.url });
+      // Idle clients can emit 'error' (e.g. Postgres restart). Without a
+      // listener the EventEmitter would rethrow and crash the process; log only.
+      const logger = new Logger('DatabasePool');
+      pool.on('error', (error) =>
+        logger.error('Idle PostgreSQL client error', error.stack),
+      );
+      return pool;
+    },
   },
   {
     provide: DRIZZLE,

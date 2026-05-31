@@ -19,7 +19,14 @@ export class AppConfigService {
       nodeEnv: this.get('NODE_ENV'),
       port: this.get('PORT'),
       apiPrefix: this.get('API_PREFIX'),
+      apiVersion: this.get('API_VERSION'),
       isProduction: this.get('NODE_ENV') === 'production',
+    };
+  }
+
+  get swagger() {
+    return {
+      path: this.get('SWAGGER_PATH'),
     };
   }
 
