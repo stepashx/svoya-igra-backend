@@ -21,16 +21,16 @@ export const envSchema = z.object({
   // CORS / frontend origin
   FRONTEND_ORIGIN: z.string().default('*'),
 
-  // Database (PostgreSQL) — connection consumed in a later stage
-  DATABASE_URL: z.string().min(1),
+  // Database (PostgreSQL)
+  DATABASE_URL: z.string().url(),
 
-  // MinIO / S3 storage — connection consumed in a later stage
+  // MinIO / S3 storage
   MINIO_ENDPOINT: z.string().min(1),
   MINIO_PORT: z.coerce.number().int().positive().default(9000),
   MINIO_ACCESS_KEY: z.string().min(1),
   MINIO_SECRET_KEY: z.string().min(1),
   MINIO_BUCKET: z.string().min(1),
-  MINIO_PUBLIC_URL: z.string().min(1),
+  MINIO_PUBLIC_URL: z.string().url(),
   MINIO_USE_SSL: booleanFromString.default('false'),
   MINIO_PATH_STYLE: booleanFromString.default('true'),
 
@@ -38,9 +38,10 @@ export const envSchema = z.object({
   WS_PATH: z.string().default('/socket.io'),
   WS_CORS_ORIGIN: z.string().default('*'),
 
-  // File limits
+  // File limits / presentation
   MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(25),
   ALLOWED_PRESENTATION_FORMATS: z.string().default('pdf,ppt,pptx'),
+  LATE_PENALTY: z.coerce.number().nonnegative().default(1),
 
   // Timers (seconds)
   ANSWER_TIMER_SECONDS: z.coerce.number().int().positive().default(60),
@@ -59,7 +60,6 @@ export const envSchema = z.object({
     .int()
     .positive()
     .default(86400),
-  LATE_PENALTY: z.coerce.number().nonnegative().default(1),
 });
 
 export type Env = z.infer<typeof envSchema>;

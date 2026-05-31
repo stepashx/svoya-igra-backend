@@ -62,6 +62,7 @@ export class AppConfigService {
         .split(',')
         .map((format) => format.trim())
         .filter((format) => format.length > 0),
+      latePenalty: this.get('LATE_PENALTY'),
     };
   }
 
@@ -85,7 +86,6 @@ export class AppConfigService {
     return {
       roomCodeLength: this.get('ROOM_CODE_LENGTH'),
       tokenTtlSeconds: this.get('RECONNECT_TOKEN_TTL_SECONDS'),
-      latePenalty: this.get('LATE_PENALTY'),
     };
   }
 }

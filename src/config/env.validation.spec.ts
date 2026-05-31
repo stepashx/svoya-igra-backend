@@ -39,4 +39,30 @@ describe('validateEnv', () => {
       /NODE_ENV/,
     );
   });
+
+  it('requires DATABASE_URL to be a valid URL', () => {
+    expect(() =>
+      validateEnv({ ...requiredEnv, DATABASE_URL: 'not-a-url' }),
+    ).toThrow(/DATABASE_URL/);
+  });
+
+  it('requires MINIO_PUBLIC_URL to be a valid URL', () => {
+    expect(() =>
+      validateEnv({ ...requiredEnv, MINIO_PUBLIC_URL: 'not-a-url' }),
+    ).toThrow(/MINIO_PUBLIC_URL/);
+  });
+
+  it('applies storage defaults (port, ssl, path-style)', () => {
+    const env = validateEnv(requiredEnv);
+    expect(env.MINIO_PORT).toBe(9000);
+    expect(env.MINIO_USE_SSL).toBe(false);
+    expect(env.MINIO_PATH_STYLE).toBe(true);
+  });
+
+  it('defaults LATE_PENALTY and keeps the env var name', () => {
+    expect(validateEnv(requiredEnv).LATE_PENALTY).toBe(1);
+    expect(
+      validateEnv({ ...requiredEnv, LATE_PENALTY: '3' }).LATE_PENALTY,
+    ).toBe(3);
+  });
 });

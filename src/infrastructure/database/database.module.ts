@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
+import { databaseProviders } from './database.providers';
+import { DatabaseService } from './database.service';
 
 /**
- * Database subsystem shell (Stage 3A placeholder).
- *
- * Reserved location for the Drizzle client, the transaction seam, and
- * feature-area repository adapters. No connection wiring, schema, migrations,
- * or repositories are implemented yet — those arrive in Stage 3B / Stage 5A.
+ * Database subsystem: PostgreSQL connection pool, Drizzle client seam, a
+ * transaction seam, and a connectivity probe. Schema, migrations, seeds, and
+ * repository adapters arrive in Stage 5A.
  */
-@Module({})
+@Module({
+  providers: [...databaseProviders, DatabaseService],
+  exports: [DatabaseService],
+})
 export class DatabaseModule {}
