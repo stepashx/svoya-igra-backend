@@ -116,6 +116,15 @@ docker compose ps          # STATUS column shows (healthy) for postgres & minio
 docker compose logs minio  # or postgres, to inspect a specific service
 ```
 
+## Continuous integration
+
+[`.gitlab-ci.yml`](.gitlab-ci.yml) runs a foundation quality gate on GitLab:
+`install → typecheck → lint → test → build`, mirroring the npm scripts above so
+CI green means locally green. An optional **manual** `docker-build` job validates
+the image builds (it never pushes). There is **no deployment** — that is deferred
+until hosting is chosen, and migrations/seeds (Stage 5A) are not part of CI yet.
+See [docs/ci.md](docs/ci.md).
+
 ## Host vs container
 
 The app reads all configuration through the typed Config module — never
@@ -158,11 +167,12 @@ See [.env.example](.env.example) for the full annotated variable list and
   schema/migrations/seeds are Stage 5A.
 - [docs/realtime-events.md](docs/realtime-events.md) — WebSocket naming
   convention and event contract seam.
+- [docs/ci.md](docs/ci.md) — GitLab CI pipeline (stages, cache, deferred deploy).
 
 ## Roadmap
 
 - **Stage 3E** — basic GitLab CI (install → typecheck → lint → test → build →
-  optional Docker build). *Not in this repository yet.*
+  optional Docker build). *Done — see [docs/ci.md](docs/ci.md).*
 - **Stage 5A** — Drizzle schema, versioned migrations, required static seeds, and
   the MinIO QR `.svg` placement procedure.
 - **Stage 5B+** — Game Session, Gameplay, Commerce, Presentation, and Evaluation

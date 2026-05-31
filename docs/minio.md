@@ -62,3 +62,7 @@ for later stages:
 Public URLs are built from `MINIO_PUBLIC_URL` + bucket + key (path-style by
 default, `MINIO_PATH_STYLE=true`). `MINIO_PUBLIC_URL` is always a browser-facing
 host URL — it is **not** rewritten to the `minio` service name inside Compose.
+
+> **Port coupling:** `MINIO_PUBLIC_URL` hardcodes the S3 API port (`9000`). It is
+> independent of `MINIO_PORT`, so if you change `MINIO_PORT` you must update the
+> port in `MINIO_PUBLIC_URL` by hand to keep public links resolvable.

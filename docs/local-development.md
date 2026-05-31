@@ -17,7 +17,7 @@ the environment variables, the two run modes, and cleanup.
 |---|---|---|---|---|
 | `backend` | built from `Dockerfile` | `3000` | — | liveness GET `/api/health` |
 | `postgres` | `postgres:16-alpine` | `5432` | `pgdata` | `pg_isready` |
-| `minio` | `minio/minio:latest` | `9000` (API), `9001` (console) | `miniodata` | `GET /minio/health/live` |
+| `minio` | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | `9000` (API), `9001` (console) | `miniodata` | `GET /minio/health/live` |
 
 The backend starts only after `postgres` and `minio` report healthy
 (`depends_on: condition: service_healthy`). Its own health check is a
@@ -46,6 +46,11 @@ and `docker-compose.yml` overrides them for the in-Compose backend:
 container and feed the backend's overridden `DATABASE_URL`; keep them consistent
 with the host `DATABASE_URL`. `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` double as
 the MinIO root credentials.
+
+`NODE_ENV` is `development` for the host run mode, but `docker-compose.yml` sets
+`NODE_ENV=production` for the in-Compose backend so it matches the runtime image
+(which is built with production dependencies only). The MinIO image is pinned to
+a dated `RELEASE.*` tag for reproducible local builds.
 
 ## Run mode A — everything in Docker
 
@@ -90,6 +95,7 @@ docker compose build backend   # rebuild image after dependency changes
 
 - **Migrations / seeds** — Stage 5A. See
   [migrations-and-seeds.md](migrations-and-seeds.md). No `db:*` scripts exist.
-- **GitLab CI** — Stage 3E. No `.gitlab-ci.yml` in this repository.
+- **GitLab CI** — see [`.gitlab-ci.yml`](../.gitlab-ci.yml) and [ci.md](ci.md).
+  Runs install → typecheck → lint → test → build (no deploy).
 - **Game features / endpoints / WebSocket events** — later feature stages. Only
   the Health endpoint and the transport-level WebSocket gateway exist today.

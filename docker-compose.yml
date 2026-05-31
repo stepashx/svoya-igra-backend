@@ -28,7 +28,8 @@ services:
       - svoya-igra
 
   minio:
-    image: minio/minio:latest
+    # Pinned for reproducibility (matches the previously validated `latest`).
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     environment:
       # MinIO root credentials double as the app's S3 access/secret keys (MVP).
@@ -55,6 +56,9 @@ services:
     env_file:
       - .env
     environment:
+      # The runtime image ships production deps only, so run it as production
+      # (overrides NODE_ENV from .env for the in-Compose container).
+      NODE_ENV: production
       # Override host-oriented values from .env with in-network service names.
       # MINIO_PUBLIC_URL is intentionally NOT overridden — it is browser-facing.
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-svoya_igra}
