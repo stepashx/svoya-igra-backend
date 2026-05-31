@@ -1,0 +1,90 @@
+# Local/demo environment: backend + PostgreSQL + MinIO.
+# Bring everything up with `docker compose up --build` (or `npm run docker:up`).
+# All values come from `.env` (copy `.env.example`). No real secrets here.
+#
+# Host vs container: the backend container reaches the other services by their
+# Compose service names (`postgres`, `minio`), so DATABASE_URL and MINIO_ENDPOINT
+# are overridden below. MINIO_PUBLIC_URL stays a host URL because the browser
+# (not the backend) opens it. See docs/local-development.md.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-svoya_igra}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-svoya_igra}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - svoya-igra
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      # MinIO root credentials double as the app's S3 access/secret keys (MVP).
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"        # S3 API
+      - "${MINIO_CONSOLE_PORT:-9001}:9001" # Web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - svoya-igra
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      # Override host-oriented values from .env with in-network service names.
+      # MINIO_PUBLIC_URL is intentionally NOT overridden — it is browser-facing.
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-svoya_igra}
+      MINIO_ENDPOINT: minio
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      # Liveness only: any HTTP response means the process serves requests.
+      # /api/health may report 503 until the MinIO bucket exists (Stage 5A).
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get({host:'127.0.0.1',port:process.env.PORT||3000,path:'/'+(process.env.API_PREFIX||'api')+'/health'},()=>process.exit(0)).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - svoya-igra
+
+volumes:
+  pgdata:
+  miniodata:
+
+networks:
+  svoya-igra:
+    driver: bridge
