@@ -1,1 +1,26 @@
+# Claude local config
 .claude
+
+# Dependencies
+/node_modules
+
+# Build output
+/dist
+*.tsbuildinfo
+
+# Test coverage
+/coverage
+
+# Environment files (never commit real secrets)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.idea
+*.iml
