@@ -1,0 +1,31 @@
+# Keep the build context small and never bake secrets/artifacts into the image.
+node_modules
+dist
+coverage
+*.tsbuildinfo
+
+# Secrets and local env (image gets config via Compose env at run time).
+.env
+.env.local
+.env.*.local
+
+# VCS / tooling / editor
+.git
+.gitignore
+.claude
+.idea
+.vscode
+*.iml
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Docs and Docker files are not needed inside the image.
+docs
+*.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+compose.yml
