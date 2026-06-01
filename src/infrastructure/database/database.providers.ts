@@ -3,11 +3,14 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { AppConfigService } from '../../config/app-config.service';
 import { DATABASE_POOL, DRIZZLE } from './database.constants';
+import * as schema from './schema';
 
 /**
  * Connection seam for PostgreSQL + Drizzle. The pool is created lazily by
  * node-postgres, so the app still boots when the database is unreachable; the
- * Health module surfaces connectivity. No schema is registered yet (Stage 5A).
+ * Health module surfaces connectivity. The schema barrel is registered so
+ * tables added in later sub-stages are picked up automatically; it currently
+ * carries only shared enums/conventions and no tables (Stage 5A.1).
  */
 export const databaseProviders: Provider[] = [
   {
@@ -27,6 +30,6 @@ export const databaseProviders: Provider[] = [
   {
     provide: DRIZZLE,
     inject: [DATABASE_POOL],
-    useFactory: (pool: Pool) => drizzle(pool),
+    useFactory: (pool: Pool) => drizzle(pool, { schema }),
   },
 ];
