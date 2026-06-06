@@ -6,6 +6,6 @@
  *
  * Constrained text column + derived union (see {@link RoomStatus}).
  */
-export const FILE_FORMATS = ['pdf', 'pptx'] as const;
+export const FILE_FORMATS = ['pdf', 'ppt', 'pptx'] as const;
 
 export type FileFormat = (typeof FILE_FORMATS)[number];

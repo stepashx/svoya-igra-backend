@@ -5,9 +5,9 @@
  *
  * Constrained text column + derived union (see {@link RoomStatus}).
  *
- * - `host` — the room host / facilitator.
- * - `jury` — a designated jury participant.
+ * - `host` — the room host / facilitator (weight 2).
+ * - `team` — an evaluating team (weight 1).
  */
-export const EVALUATOR_TYPES = ['host', 'jury'] as const;
+export const EVALUATOR_TYPES = ['host', 'team'] as const;
 
 export type EvaluatorType = (typeof EVALUATOR_TYPES)[number];
