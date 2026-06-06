@@ -1,12 +1,14 @@
 # Migrations & Seeds
 
-> **Status (Stage 5A.7): migrations, required static seeds, and QR `.svg`
-> placement implemented.** The full 16-table Drizzle schema applies cleanly to an
-> empty database, the required static catalog seeds (categories, questions,
-> presentation topics, QR-tool metadata, shop items, presentation requirements,
-> evaluation criteria) apply idempotently on top, and the QR `.svg` objects are
-> placed into MinIO and verified by a dedicated procedure (see
-> [qr-assets.md](qr-assets.md)). Runtime tables are never seeded (see below).
+> **Status (Stage 5A.8): migrations, required static seeds, and QR `.svg`
+> placement implemented and verified.** The full 16-table Drizzle schema applies
+> cleanly to an empty database, the required static catalog seeds (categories,
+> questions, presentation topics, QR-tool metadata, shop items, presentation
+> requirements, evaluation criteria) apply idempotently on top, and the QR `.svg`
+> objects are placed into MinIO and verified by a dedicated procedure (see
+> [qr-assets.md](qr-assets.md)). The data layer is covered by tests and a CI
+> `db-checks` job (see [data-layer-tests.md](data-layer-tests.md)). Runtime tables
+> are never seeded (see below).
 
 ## What exists now
 
@@ -184,3 +186,27 @@ npm run db:verify:qr-assets  # verifies metadata ↔ objects consistency
 `db:seed:qr-assets` also creates the bucket (with a public-read policy) if it is
 missing, so it turns `storage` health green. See [qr-assets.md](qr-assets.md) for
 the asset location, env vars, and what remains out of scope.
+
+## Data-layer tests & verification (Stage 5A.8)
+
+The schema, migrations, and seeds are verified at two levels — fast DB-free
+checks that run in every `npm test`, and an environment-gated integration check
+against a real PostgreSQL. The full breakdown, the per-spec table, the CI
+`db-checks` job, and the **Stage 5A acceptance checklist** live in
+[data-layer-tests.md](data-layer-tests.md). In short:
+
+```bash
+npm run db:test               # data-layer specs (DB-free)
+npm run db:verify             # live: migrate → seed → place QR → verify QR
+DATABASE_TEST_URL=... npm run db:test:integration   # real-PostgreSQL check
+```
+
+## Scope — Stage 5A is only the physical data foundation
+
+- **Migrations come before seeds**, and **seeds come before QR asset placement**
+  (the required order above).
+- **Runtime tables are not seeded** in normal operation (see below).
+- **Stage 5B behaviour is not implemented yet** — there are no Game Session use
+  cases, repository adapters, REST endpoints, WebSocket events, or DTOs. Stage 5A
+  is **only the physical data foundation**: schema, migrations, required static
+  seeds, and the QR `.svg` placement procedure.

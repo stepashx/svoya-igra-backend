@@ -108,13 +108,39 @@ describe('required static seed data', () => {
         expect(qrToolIds.has(item.qrToolId)).toBe(true);
       }
     });
+
+    it('keeps shop item ↔ QR tool a clean one-to-one mapping (count consistency)', () => {
+      // One buyable item per QR tool, and no QR tool wrapped twice — so the
+      // catalog counts stay consistent and every tool is purchasable exactly once.
+      expect(SHOP_ITEM_SEEDS).toHaveLength(QR_TOOL_SEEDS.length);
+      const wrappedToolIds = SHOP_ITEM_SEEDS.map((item) => item.qrToolId);
+      expect(new Set(wrappedToolIds).size).toBe(wrappedToolIds.length);
+      expect(new Set(wrappedToolIds)).toEqual(
+        new Set(QR_TOOL_SEEDS.map((tool) => tool.id)),
+      );
+    });
+
+    it('gives every QR tool a non-empty title (metadata is storage-agnostic here)', () => {
+      // Storage fields (provider/bucket/storageKey/publicUrl) are composed by the
+      // seed runner from config — the dataset itself carries only intrinsic
+      // metadata, so it must not pre-bake any storage key.
+      for (const tool of QR_TOOL_SEEDS) {
+        expect(tool.title.trim().length).toBeGreaterThan(0);
+        expect(tool).not.toHaveProperty('storageKey');
+      }
+    });
   });
 
   describe('presentation requirements', () => {
-    it('has unique ordering and non-empty titles', () => {
+    it('has contiguous 1..N ordering and non-empty titles', () => {
       expect(PRESENTATION_REQUIREMENT_SEEDS.length).toBeGreaterThan(0);
-      const orders = PRESENTATION_REQUIREMENT_SEEDS.map((r) => r.order);
+      const orders = PRESENTATION_REQUIREMENT_SEEDS.map((r) => r.order).sort(
+        (a, b) => a - b,
+      );
       expect(new Set(orders).size).toBe(orders.length);
+      expect(orders).toEqual(
+        Array.from({ length: orders.length }, (_, i) => i + 1),
+      );
       for (const requirement of PRESENTATION_REQUIREMENT_SEEDS) {
         expect(requirement.title.trim().length).toBeGreaterThan(0);
       }

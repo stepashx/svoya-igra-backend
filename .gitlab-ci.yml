@@ -16,6 +16,7 @@ stages:
   - typecheck
   - lint
   - test
+  - db-checks
   - build
   - docker
 
@@ -63,6 +64,37 @@ test:
   # Default tests are mocked — no live PostgreSQL/MinIO/WebSocket/browser needed.
   script:
     - npm test
+
+# Data-layer checks against a REAL, disposable PostgreSQL (Stage 5A.8). Proves the
+# committed migrations apply to an empty DB, the required static seeds load with
+# the expected counts, and the key unique/FK constraints are enforced. MinIO is
+# NOT required: the seed composes QR metadata from config without object storage,
+# and verifying QR objects against a live MinIO stays a local/manual step
+# (`npm run db:verify:qr-assets`). The postgres service is a standard, reliable
+# GitLab dependency — this job needs no external network or unavailable assets.
+db-checks:
+  stage: db-checks
+  dependencies:
+    - install
+  services:
+    - postgres:16-alpine
+  variables:
+    POSTGRES_DB: svoya_igra
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    # The app/CLI connection and the gated integration test both target the
+    # service DB (host = the `postgres` service alias).
+    DATABASE_URL: "postgres://postgres:postgres@postgres:5432/svoya_igra"
+    DATABASE_TEST_URL: "postgres://postgres:postgres@postgres:5432/svoya_igra"
+    # Composed into QR metadata only (no MinIO connection is made here).
+    MINIO_BUCKET: svoya-igra
+    MINIO_PUBLIC_URL: "http://localhost:9000"
+  script:
+    # Exercise the real CLIs, then the gated integration spec (migrate-on-empty,
+    # seed counts, constraint enforcement). All three are idempotent.
+    - npm run db:migrate
+    - npm run db:seed
+    - npm run db:test:integration
 
 build:
   stage: build
