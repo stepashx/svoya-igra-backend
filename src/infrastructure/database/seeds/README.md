@@ -43,8 +43,10 @@ for the full workflow, env vars, idempotency, and clean-DB expectations.
 - **No runtime data:** `rooms`, `players`, `teams`, `board_cells`, `purchases`,
   `inventory_items`, `presentation_submissions`, `evaluation_scores`,
   `final_results` are never seeded.
-- **No MinIO upload:** QR metadata is composed from config; placing the `.svg`
-  objects in MinIO is a later sub-stage (5A.7).
+- **No MinIO upload here:** this runner composes QR metadata from config only.
+  Placing the `.svg` objects in MinIO is the separate QR procedure (Stage 5A.7,
+  `npm run db:seed:qr-assets` / `db:verify:qr-assets`) — see
+  [../../../../docs/qr-assets.md](../../../../docs/qr-assets.md).
 - **No demo seeds:** none defined in this sub-stage.
 
 ## Content language

@@ -1,12 +1,12 @@
 # Migrations & Seeds
 
-> **Status (Stage 5A.6): migrations and required static seeds implemented.** The
-> full 16-table Drizzle schema applies cleanly to an empty database, and the
-> required static catalog seeds (categories, questions, presentation topics,
-> QR-tool metadata, shop items, presentation requirements, evaluation criteria)
-> can be applied idempotently on top. **QR `.svg` placement into MinIO is still
-> out of scope** (a later sub-stage, 5A.7): this stage seeds QR *metadata* only
-> and uploads no objects. Runtime tables are never seeded (see below).
+> **Status (Stage 5A.7): migrations, required static seeds, and QR `.svg`
+> placement implemented.** The full 16-table Drizzle schema applies cleanly to an
+> empty database, the required static catalog seeds (categories, questions,
+> presentation topics, QR-tool metadata, shop items, presentation requirements,
+> evaluation criteria) apply idempotently on top, and the QR `.svg` objects are
+> placed into MinIO and verified by a dedicated procedure (see
+> [qr-assets.md](qr-assets.md)). Runtime tables are never seeded (see below).
 
 ## What exists now
 
@@ -20,19 +20,25 @@
 - The required static seeds under
   [`src/infrastructure/database/seeds`](../src/infrastructure/database/seeds)
   (see that folder's [README](../src/infrastructure/database/seeds/README.md)).
-- Three npm scripts: `db:generate`, `db:migrate`, and `db:seed`.
+- npm scripts: `db:generate`, `db:migrate`, `db:seed`, plus the QR procedure
+  `db:seed:qr-assets` and `db:verify:qr-assets` (see
+  [qr-assets.md](qr-assets.md)).
 
-## Required order: `migrate → seed`
+## Required order: `migrate → seed → place QR assets → verify QR assets`
 
-Seeds insert rows into tables, so the schema must exist first. **Always run
-migrations before seeds:**
+Seeds insert rows into tables, so the schema must exist first; QR placement backs
+the seeded QR metadata with objects, so it runs after the seed. **Always run in
+this order:**
 
 ```bash
-npm run db:migrate   # 1. create/upgrade the schema
-npm run db:seed      # 2. load the required static catalog data
+npm run db:migrate          # 1. create/upgrade the schema
+npm run db:seed             # 2. load the required static catalog data
+npm run db:seed:qr-assets   # 3. place QR .svg objects in MinIO
+npm run db:verify:qr-assets # 4. verify QR metadata ↔ objects
 ```
 
-`db:seed` is idempotent (see below), so the pair is safe to re-run.
+Every step is idempotent (see below), so the sequence is safe to re-run. Steps
+3–4 need a reachable MinIO; steps 1–2 need only PostgreSQL.
 
 ## Required environment variables
 
@@ -163,11 +169,18 @@ There is **no demo/runtime seed** in this sub-stage. The seed runner writes none
 of these tables, and a post-seed inspection of a fresh database shows them all
 empty.
 
-## QR `.svg` placement — still out of scope
+## QR `.svg` placement (Stage 5A.7)
 
 The seed records QR-tool **metadata** with a global `storageKey`
-(`qr-tools/<qrToolId>.svg`, no `roomId`) and a composed `publicUrl`. It does
-**not** create the MinIO bucket and does **not** upload the `.svg` bytes, so
-those `publicUrl`s will not resolve until the QR/MinIO placement procedure lands
-in a later sub-stage (5A.7). Until then, `storage` health stays red until the
-bucket is created manually (see [minio.md](minio.md)).
+(`qr-tools/<qrToolId>.svg`, no `roomId`) and a composed `publicUrl` but uploads no
+bytes, so those `publicUrl`s do not resolve until the objects are placed. The QR
+procedure closes that gap:
+
+```bash
+npm run db:seed:qr-assets    # ensures the bucket + uploads the QR .svg objects
+npm run db:verify:qr-assets  # verifies metadata ↔ objects consistency
+```
+
+`db:seed:qr-assets` also creates the bucket (with a public-read policy) if it is
+missing, so it turns `storage` health green. See [qr-assets.md](qr-assets.md) for
+the asset location, env vars, and what remains out of scope.

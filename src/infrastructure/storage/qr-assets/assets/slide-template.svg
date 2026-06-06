@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="QR placeholder: slide-template">
+  <!-- MVP placeholder QR asset (Stage 5A.7). Replace with a real QR .svg before production. -->
+  <rect width="240" height="240" fill="#ffffff"/>
+  <rect x="16" y="16" width="208" height="208" fill="none" stroke="#111111" stroke-width="8"/>
+  <text x="120" y="116" font-family="monospace" font-size="18" text-anchor="middle" fill="#111111">QR</text>
+  <text x="120" y="146" font-family="monospace" font-size="14" text-anchor="middle" fill="#444444">slide-template</text>
+</svg>

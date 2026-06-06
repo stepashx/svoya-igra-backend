@@ -18,6 +18,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "ts-node --transpile-only src/infrastructure/database/seeds/seed.ts",
+    "db:seed:qr-assets": "ts-node --transpile-only src/infrastructure/storage/qr-assets/place-qr-assets.ts",
+    "db:verify:qr-assets": "ts-node --transpile-only src/infrastructure/storage/qr-assets/verify-qr-assets.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

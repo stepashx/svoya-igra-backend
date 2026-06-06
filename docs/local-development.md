@@ -93,22 +93,23 @@ docker compose build backend   # rebuild image after dependency changes
 
 ## Database: migrations & seeds
 
-After the stack is up, create the schema and load the required static catalog
-data (always in this order):
+After the stack is up, create the schema, load the required static catalog data,
+and place the QR `.svg` objects in MinIO (always in this order):
 
 ```bash
-npm run db:migrate   # apply all migrations (0 → 16 tables)
-npm run db:seed      # load required static seeds, idempotently
+npm run db:migrate          # apply all migrations (0 → 16 tables)
+npm run db:seed             # load required static seeds, idempotently
+npm run db:seed:qr-assets   # place QR .svg objects in MinIO (creates the bucket)
+npm run db:verify:qr-assets # verify QR metadata ↔ objects
 ```
 
-Both are safe to re-run. See
-[migrations-and-seeds.md](migrations-and-seeds.md) for env vars, idempotency,
-clean-DB expectations, and the note that runtime tables are never seeded.
+All four are safe to re-run. Steps 1–2 need only PostgreSQL; steps 3–4 need a
+reachable MinIO. See [migrations-and-seeds.md](migrations-and-seeds.md) for env
+vars, idempotency, clean-DB expectations, and the note that runtime tables are
+never seeded, and [qr-assets.md](qr-assets.md) for the QR procedure.
 
 ## Not here yet
 
-- **QR `.svg` placement in MinIO** — Stage 5A.7. Seeds record QR *metadata*
-  only; no objects are uploaded, so QR `publicUrl`s do not resolve yet.
 - **GitLab CI** — see [`.gitlab-ci.yml`](../.gitlab-ci.yml) and [ci.md](ci.md).
   Runs install → typecheck → lint → test → build (no deploy).
 - **Game features / endpoints / WebSocket events** — later feature stages. Only
