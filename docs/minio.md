@@ -19,16 +19,26 @@ The MinIO container's root credentials are set from `MINIO_ACCESS_KEY` /
 console. These are **local-development defaults** — change them everywhere
 before any shared environment.
 
-## The bucket is not created automatically
+## The bucket is not created automatically by the app
 
 The storage health probe is **read-only**: it checks that the configured bucket
 exists and never creates it. On a fresh stack the bucket is missing, so
-`GET /api/health` reports `storage: error` (bucket does not exist). This is the
-expected Stage 3D state.
+`GET /api/health` reports `storage: error` (bucket does not exist) until the
+bucket is provisioned.
 
-Automatic bucket creation and the QR `.svg` placement procedure are **Stage 5A**
-(see [migrations-and-seeds.md](migrations-and-seeds.md)). To create the bucket
-now and turn storage green, either:
+**Recommended — the QR placement procedure** (Stage 5A.7) creates the bucket,
+applies the public-read policy, and uploads the QR `.svg` objects in one step:
+
+```bash
+npm run db:seed:qr-assets    # ensures bucket + public policy + uploads QR svgs
+npm run db:verify:qr-assets  # confirms metadata ↔ objects consistency
+```
+
+See [qr-assets.md](qr-assets.md) for the full procedure. After it runs, storage
+health turns green.
+
+If you only need the empty bucket (no QR objects yet), you can also create it
+manually:
 
 **Option A — MinIO console:** open http://localhost:9001, log in, and create a
 bucket named `svoya-igra`.
@@ -43,9 +53,10 @@ docker run --rm --network svoya-igra-backend_svoya-igra --entrypoint sh \
 ```
 
 `mc anonymous set download` makes objects publicly readable, matching the
-public-bucket model the frontend relies on. (The Compose network is named
-`<project>_svoya-igra`; the project name defaults to the repo folder
-`svoya-igra-backend`. Adjust if you renamed the folder.)
+public-bucket model the frontend relies on (the same policy the placement
+procedure applies). (The Compose network is named `<project>_svoya-igra`; the
+project name defaults to the repo folder `svoya-igra-backend`. Adjust if you
+renamed the folder.)
 
 ## Storage key & public URL conventions
 
@@ -54,7 +65,8 @@ by the storage seam. No objects are written yet — the conventions are in place
 for later stages:
 
 - **QR tools** are global/static assets, so keys carry no room id:
-  `qr-tools/<qrToolId>.svg`. Seeded and placed in MinIO during **Stage 5A**.
+  `qr-tools/<qrToolId>.svg`. Seeded (metadata, Stage 5A.6) and placed in MinIO by
+  the QR procedure (Stage 5A.7, see [qr-assets.md](qr-assets.md)).
 - **Presentation uploads** are room/team-scoped runtime files:
   `rooms/<roomId>/presentations/<teamId>/<submissionId>.<ext>`. Implemented in
   the Presentation feature stage.

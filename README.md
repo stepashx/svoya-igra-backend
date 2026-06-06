@@ -9,9 +9,10 @@ This repository is **backend only**. There is no frontend here; the frontend is
 an external consumer of the REST API, WebSocket events, and public file URLs.
 
 > **Foundation stage.** The infrastructure skeleton is in place (config, health,
-> database/storage seams, Swagger, base WebSocket gateway, Docker). There are
-> **no game features, schema, migrations, or seeds yet** — those arrive in later
-> stages (see [Roadmap](#roadmap)).
+> database/storage seams, Swagger, base WebSocket gateway, Docker), along with the
+> Drizzle schema, migrations, required static seeds, and the QR `.svg` MinIO
+> placement procedure (Stage 5A). There are **no game features, REST endpoints, or
+> WebSocket events yet** — those arrive in later stages (see [Roadmap](#roadmap)).
 
 ## Prerequisites
 
@@ -98,9 +99,10 @@ reachable and `503` if any is not. Shape:
 
 > **Expected on a fresh stack:** `database` and `backend` are `ok`, but `storage`
 > reports an error like `MinIO bucket "svoya-igra" does not exist`. The storage
-> probe is read-only and never creates the bucket — bucket/asset provisioning is
-> **Stage 5A**. See [docs/minio.md](docs/minio.md) for an optional one-liner to
-> create the bucket now and turn storage green.
+> probe is read-only and never creates the bucket. Run the QR placement procedure
+> (`npm run db:seed:qr-assets`, see [docs/qr-assets.md](docs/qr-assets.md)) to
+> create the bucket and upload the QR assets — that turns storage green — or
+> [docs/minio.md](docs/minio.md) for a one-liner that just creates the bucket.
 
 ### WebSocket
 
@@ -163,8 +165,11 @@ See [.env.example](.env.example) for the full annotated variable list and
 
 - [docs/local-development.md](docs/local-development.md) — detailed local dev flow.
 - [docs/minio.md](docs/minio.md) — MinIO console, bucket, and storage conventions.
-- [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md) — **placeholder**;
-  schema/migrations/seeds are Stage 5A.
+- [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md) — schema +
+  `db:generate`/`db:migrate`/`db:seed` workflow (migrations and required static
+  seeds done).
+- [docs/qr-assets.md](docs/qr-assets.md) — QR `.svg` MinIO placement + verification
+  (`db:seed:qr-assets` / `db:verify:qr-assets`).
 - [docs/realtime-events.md](docs/realtime-events.md) — WebSocket naming
   convention and event contract seam.
 - [docs/ci.md](docs/ci.md) — GitLab CI pipeline (stages, cache, deferred deploy).
@@ -174,6 +179,8 @@ See [.env.example](.env.example) for the full annotated variable list and
 - **Stage 3E** — basic GitLab CI (install → typecheck → lint → test → build →
   optional Docker build). *Done — see [docs/ci.md](docs/ci.md).*
 - **Stage 5A** — Drizzle schema, versioned migrations, required static seeds, and
-  the MinIO QR `.svg` placement procedure.
+  the MinIO QR `.svg` placement procedure. *Done — see
+  [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md) and
+  [docs/qr-assets.md](docs/qr-assets.md).*
 - **Stage 5B+** — Game Session, Gameplay, Commerce, Presentation, and Evaluation
   feature areas, plus their REST endpoints and WebSocket events.
