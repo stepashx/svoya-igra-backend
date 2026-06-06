@@ -91,10 +91,24 @@ npm run docker:reset:volumes   # also delete pgdata + miniodata (DESTRUCTIVE)
 docker compose build backend   # rebuild image after dependency changes
 ```
 
+## Database: migrations & seeds
+
+After the stack is up, create the schema and load the required static catalog
+data (always in this order):
+
+```bash
+npm run db:migrate   # apply all migrations (0 → 16 tables)
+npm run db:seed      # load required static seeds, idempotently
+```
+
+Both are safe to re-run. See
+[migrations-and-seeds.md](migrations-and-seeds.md) for env vars, idempotency,
+clean-DB expectations, and the note that runtime tables are never seeded.
+
 ## Not here yet
 
-- **Migrations / seeds** — Stage 5A. See
-  [migrations-and-seeds.md](migrations-and-seeds.md). No `db:*` scripts exist.
+- **QR `.svg` placement in MinIO** — Stage 5A.7. Seeds record QR *metadata*
+  only; no objects are uploaded, so QR `publicUrl`s do not resolve yet.
 - **GitLab CI** — see [`.gitlab-ci.yml`](../.gitlab-ci.yml) and [ci.md](ci.md).
   Runs install → typecheck → lint → test → build (no deploy).
 - **Game features / endpoints / WebSocket events** — later feature stages. Only

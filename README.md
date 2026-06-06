@@ -164,7 +164,8 @@ See [.env.example](.env.example) for the full annotated variable list and
 - [docs/local-development.md](docs/local-development.md) — detailed local dev flow.
 - [docs/minio.md](docs/minio.md) — MinIO console, bucket, and storage conventions.
 - [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md) — schema +
-  `db:generate`/`db:migrate` workflow (migrations done; seeds still pending).
+  `db:generate`/`db:migrate`/`db:seed` workflow (migrations and required static
+  seeds done; QR `.svg` MinIO placement still pending).
 - [docs/realtime-events.md](docs/realtime-events.md) — WebSocket naming
   convention and event contract seam.
 - [docs/ci.md](docs/ci.md) — GitLab CI pipeline (stages, cache, deferred deploy).

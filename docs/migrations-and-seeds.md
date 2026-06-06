@@ -1,10 +1,12 @@
 # Migrations & Seeds
 
-> **Status (Stage 5A.5): migrations implemented; seeds not yet.** The full
-> 16-table Drizzle schema and its initial versioned migration exist and apply
-> cleanly to an empty database. **Seeds are intentionally NOT part of Stage
-> 5A.5** — there are no seed scripts, no static seed data, and no QR/MinIO asset
-> placement procedure yet. Those arrive in a later sub-stage.
+> **Status (Stage 5A.6): migrations and required static seeds implemented.** The
+> full 16-table Drizzle schema applies cleanly to an empty database, and the
+> required static catalog seeds (categories, questions, presentation topics,
+> QR-tool metadata, shop items, presentation requirements, evaluation criteria)
+> can be applied idempotently on top. **QR `.svg` placement into MinIO is still
+> out of scope** (a later sub-stage, 5A.7): this stage seeds QR *metadata* only
+> and uploads no objects. Runtime tables are never seeded (see below).
 
 ## What exists now
 
@@ -14,17 +16,40 @@
 - Drizzle Kit configuration at [`drizzle.config.ts`](../drizzle.config.ts).
 - The initial generated migration under
   [`src/infrastructure/database/migrations`](../src/infrastructure/database/migrations)
-  (SQL + the `meta/` journal), which Infrastructure owns alongside the schema.
-- Two npm scripts: `db:generate` and `db:migrate`.
+  (SQL + the `meta/` journal).
+- The required static seeds under
+  [`src/infrastructure/database/seeds`](../src/infrastructure/database/seeds)
+  (see that folder's [README](../src/infrastructure/database/seeds/README.md)).
+- Three npm scripts: `db:generate`, `db:migrate`, and `db:seed`.
+
+## Required order: `migrate → seed`
+
+Seeds insert rows into tables, so the schema must exist first. **Always run
+migrations before seeds:**
+
+```bash
+npm run db:migrate   # 1. create/upgrade the schema
+npm run db:seed      # 2. load the required static catalog data
+```
+
+`db:seed` is idempotent (see below), so the pair is safe to re-run.
 
 ## Required environment variables
 
-Both scripts read configuration from the local `.env` (loaded by
-`drizzle.config.ts` via `dotenv`). Only one variable is needed for migrations:
+All three scripts read configuration from the local `.env` (loaded via
+`dotenv`). They are CLI tooling, so — like `drizzle.config.ts` — they read env
+directly rather than through the app's typed Config module.
 
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string used to apply migrations (and the `dbCredentials` for `drizzle-kit migrate`). |
+| Variable | Used by | Purpose |
+|---|---|---|
+| `DATABASE_URL` | migrate, seed | PostgreSQL connection string. |
+| `MINIO_BUCKET` | seed | Bucket recorded in QR-tool metadata. |
+| `MINIO_PUBLIC_URL` | seed | Base URL used to compose QR `publicUrl`. |
+| `MINIO_PATH_STYLE` | seed | Path-style vs virtual-hosted URL shape (defaults to `true`). |
+
+> The seed reads the MinIO variables only to **compose** QR-tool metadata
+> (`bucket`, `storageKey`, `publicUrl`). It does **not** connect to MinIO and
+> does **not** upload any `.svg` object.
 
 Copy the template once before running anything:
 
@@ -33,24 +58,19 @@ cp .env.example .env
 ```
 
 `DATABASE_URL` defaults to `postgres://postgres:postgres@localhost:5432/svoya_igra`,
-matching the Docker Compose `postgres` service. (MinIO variables are unrelated to
-migrations and are not required here — they matter only once seeds/uploads land.)
+matching the Docker Compose `postgres` service.
 
 ## How to generate a migration
 
-After changing any schema file under
-`src/infrastructure/database/schema`, regenerate the migration SQL from the
-current schema:
+After changing any schema file under `src/infrastructure/database/schema`,
+regenerate the migration SQL:
 
 ```bash
 npm run db:generate
 ```
 
-This writes a new timestamped/sequence-prefixed SQL file plus an updated journal
-snapshot under `src/infrastructure/database/migrations`. Review the generated SQL
-and commit it together with the schema change. The initial migration
-(`0000_*.sql`) already covers all 16 tables, so you only run this for *new*
-changes.
+This writes a new timestamped SQL file plus an updated journal snapshot. Review
+the generated SQL and commit it with the schema change.
 
 ## How to apply migrations locally
 
@@ -68,31 +88,86 @@ changes.
    npm run db:migrate
    ```
 
-`db:migrate` is **idempotent** — re-running it when everything is already applied
-is a no-op (Drizzle tracks applied migrations in its `drizzle.__drizzle_migrations`
-journal table).
+`db:migrate` is idempotent — re-running when everything is applied is a no-op.
 
-## Applying to an empty database / resetting locally
+## How to run seeds locally
 
-There is no dedicated reset script in this sub-stage (a guarded reset belongs with
-the seed work). To verify migrations against a genuinely empty database, drop the
-Compose volume and re-apply — safe because all data here is reproducible:
+With migrations applied and `.env` in place:
 
 ```bash
-npm run docker:reset:volumes   # docker compose down -v  (drops the pgdata volume)
-docker compose up -d postgres
-npm run db:migrate             # recreates all 16 tables from scratch
+npm run db:seed
 ```
 
-This is exactly how the migration was verified for Stage 5A.5: from 0 tables to
-all 16, with 27 foreign keys and 17 unique constraints, no ordering errors.
+The script applies every required static dataset in dependency order
+(reference/catalog tables before their dependents — the same order as the
+migrations), then reads back and **verifies the row counts**, printing a summary:
 
-## Seeds — explicitly out of scope for Stage 5A.5
+```
+Required static seeds applied. Verified counts:
+  categories: 6 (expected 6)
+  questions: 30 (expected 30)
+  presentationTopics: 8 (expected 8)
+  qrTools: 6 (expected 6)
+  shopItems: 6 (expected 6)
+  presentationRequirements: 6 (expected 6)
+  evaluationCriteria: 2 (expected 2)
+```
 
-No seeds, seed scripts, static/demo seed data, or QR/MinIO asset placement are
-part of this sub-stage. The required static seeds (6 categories, 30 questions
-with backend-only answers, presentation topics, QR-tool metadata, shop items,
-presentation requirements, evaluation criteria), optional demo seeds, and the
-MinIO `.svg` placement procedure are deliberately deferred. Until they land,
-`storage` health stays red until the bucket is created manually (see
-[minio.md](minio.md)), and the database simply contains the empty schema.
+If any count does not match its expected value, the script exits non-zero with a
+clear message.
+
+### Idempotency
+
+Every seeded row has a **stable id** and is written with an upsert on the primary
+key (`ON CONFLICT (id) DO UPDATE`). Re-running `db:seed`:
+
+- never creates duplicates (counts stay fixed);
+- refreshes catalog content in place if a seed definition changed;
+- preserves existing runtime data — catalog rows are **updated, never deleted**,
+  so foreign keys from any runtime rows (purchases → shop items, board cells →
+  questions, etc.) remain valid.
+
+So `db:seed` is safe to run repeatedly, on a clean database or a populated one.
+
+## Clean-database expectation
+
+On a genuinely empty database the flow is simply:
+
+```bash
+docker compose up -d postgres
+npm run db:migrate     # 0 → 16 tables
+npm run db:seed        # loads the required static catalogs
+```
+
+To verify against a truly empty database (or reset locally — safe because all
+data here is reproducible), drop the Compose volume and re-apply:
+
+```bash
+npm run docker:reset:volumes   # docker compose down -v
+docker compose up -d postgres
+npm run db:migrate
+npm run db:seed
+```
+
+## Runtime tables are NOT seeded
+
+Seeds load **only static catalog tables**. The following runtime tables are
+created by gameplay and **must never be seeded in normal operation**:
+
+```
+rooms, players, teams, board_cells, purchases, inventory_items,
+presentation_submissions, evaluation_scores, final_results
+```
+
+There is **no demo/runtime seed** in this sub-stage. The seed runner writes none
+of these tables, and a post-seed inspection of a fresh database shows them all
+empty.
+
+## QR `.svg` placement — still out of scope
+
+The seed records QR-tool **metadata** with a global `storageKey`
+(`qr-tools/<qrToolId>.svg`, no `roomId`) and a composed `publicUrl`. It does
+**not** create the MinIO bucket and does **not** upload the `.svg` bytes, so
+those `publicUrl`s will not resolve until the QR/MinIO placement procedure lands
+in a later sub-stage (5A.7). Until then, `storage` health stays red until the
+bucket is created manually (see [minio.md](minio.md)).
