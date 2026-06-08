@@ -7,6 +7,7 @@ Scope — только Backend и DevOps. Frontend, UI/UX и дизайн — в
 - Канон правил и архитектуры — `.ai/docs/backend_devops_final_plan.md` (финальный план, разделы 1–27). Главный источник.
 - `.ai/docs/Этап2_Архитектура_Backend.md` — архитектура: слои, модули, границы, порты/адаптеры.
 - `.ai/docs/Этап1_Анализ_и_фиксация_правил.md` — контекст; часть решений устарела (см. §3 Этапа 2).
+- Папка `.ai/docs/` хранится локально (вне git, в `.gitignore`) — на чистом клоне её не будет.
 - Приоритет при конфликте: финальный план → Этап 1 как контекст → явно помеченное предположение.
 - Перед любой задачей читай релевантные разделы плана, указанные в промпте. Не реконструируй правила по памяти.
 
@@ -26,9 +27,20 @@ Scope — только Backend и DevOps. Frontend, UI/UX и дизайн — в
 
 ## Отклонения от плана (авторизовано оператором)
 - CI: используем **GitHub Actions** вместо GitLab CI (план описывает GitLab). Детали миграции — отдельной задачей.
+- Ветку `stage-5a-8-data-layer-polish` НЕ используем: это старая реализация data-layer, исключена решением оператора. Этап 4 строится заново на `master`.
+- Отклонение от §12 плана: `PresentationTopic` и `ShopItem` — глобальные переиспользуемые каталоги (сидятся без комнаты). Per-room состояние держится отдельно: выбор темы — `teams.selected_topic_id` (+ unique в комнате), покупка — таблица `purchases` (+ unique товара в комнате). Поля `assignedTeamId`/`roomId` у Topic и `isPurchased`/`purchasedByTeamId`/`purchasedAt` у ShopItem не используются.
 
 ## Команды
-- TBD: будут заполнены после research (точные скрипты typecheck / lint / build / test / migrate / seed и менеджер пакетов пока не подтверждены).
+- typecheck: `npm run typecheck`. Lint: `npm run lint` (`--max-warnings 0`), фикс `npm run lint:fix`. Формат: `npm run format`.
+- build: `npm run build`. Тесты: `npm test` (jest, `*.spec.ts` рядом с кодом), покрытие `npm run test:cov`.
+- Окружение: `npm run docker:up` / `docker:down` / `docker:logs` / `docker:reset:volumes` / `docker:config`.
+- Миграции/сиды: появятся в Этапе 4 (`db:generate`, `db:migrate`, `db:seed`) — скриптов пока нет.
+- Node 22; пакетный менеджер — npm (`package-lock.json`).
+
+## Env
+- Имена env в репо отличаются от §21 плана. Источник истины по именам — `.env.example` и `src/config/env.validation.ts`; не бери имена из плана.
+- Заметные переименования: `PORT` (не `APP_PORT`); `MINIO_*` вместо `S3_*` — `ENDPOINT`/`BUCKET`/`ACCESS_KEY`/`SECRET_KEY`/`PUBLIC_URL`/`USE_SSL`/`PATH_STYLE`; `PRESENTATION_PREP_SECONDS`; `LATE_PENALTY`; `MAX_FILE_SIZE_MB`; `RECONNECT_TOKEN_TTL_SECONDS`.
+- Приложение читает `DATABASE_URL` (нет `POSTGRES_HOST`; `POSTGRES_*` в `.env.example` — только провижининг Compose). `STORAGE_PROVIDER` как env отсутствует — значение `'minio'` задаётся в коде/сидах.
 
 ## Поддержка этого файла
 - Файл курируемый и версионируется. Держи его коротким (≤ ~150 строк): сюда — только стабильные правила, пути к канону и команды.
