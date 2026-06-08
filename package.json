@@ -28,7 +28,8 @@
     "docker:reset:volumes": "docker compose down -v",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "db:seed": "ts-node --transpile-only src/infrastructure/database/seeds/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.4",

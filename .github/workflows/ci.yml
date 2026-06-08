@@ -36,6 +36,21 @@ jobs:
         run: npm run build
       - name: Test
         run: npm test
+      - name: Schema drift (migrations match Drizzle schema)
+        # Offline: `db:generate` does not connect (drizzle.config only connects
+        # for migrate/check). A dummy DATABASE_URL satisfies config parsing.
+        # Fails if regenerating produces any change under migrations/ — i.e. the
+        # committed migration has drifted from the schema and must be regenerated.
+        env:
+          DATABASE_URL: postgres://drift:drift@localhost:5432/drift
+        run: |
+          npm run db:generate
+          if [ -n "$(git status --porcelain -- src/infrastructure/database/migrations)" ]; then
+            echo "::error::Drizzle schema and migrations are out of sync. Run 'npm run db:generate' and commit the result."
+            git status --porcelain -- src/infrastructure/database/migrations
+            git --no-pager diff -- src/infrastructure/database/migrations
+            exit 1
+          fi
   docker:
     name: Docker image build (optional)
     if: github.event_name == 'workflow_dispatch'
