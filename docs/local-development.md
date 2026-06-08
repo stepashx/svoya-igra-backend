@@ -95,7 +95,7 @@ docker compose build backend   # rebuild image after dependency changes
 
 - **Migrations / seeds** — Stage 5A. See
   [migrations-and-seeds.md](migrations-and-seeds.md). No `db:*` scripts exist.
-- **GitLab CI** — see [`.gitlab-ci.yml`](../.gitlab-ci.yml) and [ci.md](ci.md).
-  Runs install → typecheck → lint → test → build (no deploy).
+- **GitHub Actions** — see [`ci.yml`](../.github/workflows/ci.yml) and
+  [ci.md](ci.md). Runs typecheck → lint → build → test (no deploy).
 - **Game features / endpoints / WebSocket events** — later feature stages. Only
   the Health endpoint and the transport-level WebSocket gateway exist today.

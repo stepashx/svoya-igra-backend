@@ -1,48 +1,65 @@
-# Continuous Integration (GitLab CI)
+# Continuous Integration (GitHub Actions)
 
-The pipeline is defined in [`.gitlab-ci.yml`](../.gitlab-ci.yml). It is a
-**foundation quality gate** for the backend: every push/merge request installs
-dependencies reproducibly and runs the same checks a developer runs locally.
+The pipeline is defined in
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml). It is a **foundation
+quality gate** for the backend: every push and pull request runs the same checks
+a developer runs locally, so "green in CI" means "green on a developer machine".
 There is intentionally **no deployment** — see [Deferred](#deferred).
 
-## Pipeline stages
+## Triggers
 
-Jobs run in this order; each runs one npm script (the same one used locally):
+The workflow runs on:
 
-| Stage | Job | Checks | Local equivalent |
-|---|---|---|---|
-| `install` | `install` | Reproducible install from the lockfile | `npm ci` |
-| `typecheck` | `typecheck` | TypeScript compiles with no errors | `npm run typecheck` |
-| `lint` | `lint` | ESLint passes (`--max-warnings 0`, no auto-fix) | `npm run lint` |
-| `test` | `test` | Jest unit tests pass | `npm test` |
-| `build` | `build` | `nest build` produces `dist/` | `npm run build` |
-| `docker` | `docker-build` | Backend image builds from `Dockerfile` (**optional/manual**) | `docker build .` |
+- **push** to `master`;
+- **pull_request** targeting `master`;
+- **workflow_dispatch** — a manual run from the repository's **Actions** tab.
 
-`install` uses `npm ci`, so the job **fails if `package.json` and
-`package-lock.json` are out of sync**. The Node image (`node:22-alpine`) matches
-the project's Node 22 target and the `Dockerfile`.
+Runs are grouped by ref with `cancel-in-progress`, so pushing a newer commit to
+the same branch/PR cancels the in-flight run. The workflow token is read-only
+(`permissions: contents: read`).
 
-## Cache & artifacts
+## Quality-gate job
 
-- **Cache:** npm's download cache (`.npm/`) is cached across pipelines, keyed by
-  `package-lock.json`, so installs are fast and reproducible.
-- **Artifacts:** `install` publishes `node_modules/` as a short-lived (1 h)
-  artifact that `typecheck` / `lint` / `test` / `build` reuse — dependencies are
-  installed once per pipeline, not per job. `build` publishes `dist/` (1 h).
-  `node_modules/` is never committed.
+The required `build` job runs on `ubuntu-latest` and executes the same npm
+scripts used locally, in order:
 
-## Optional Docker build job
+| Step | Command | Checks |
+|---|---|---|
+| Checkout | `actions/checkout@v4` | Fetch the repository |
+| Setup Node | `actions/setup-node@v4` | Node from [`.nvmrc`](../.nvmrc), npm cache |
+| Install | `npm ci --prefer-offline --no-audit --no-fund` | Reproducible install from the lockfile |
+| Typecheck | `npm run typecheck` | TypeScript compiles with no errors |
+| Lint | `npm run lint` | ESLint passes (`--max-warnings 0`, no auto-fix) |
+| Build | `npm run build` | `nest build` produces `dist/` |
+| Test | `npm test` | Jest unit tests pass |
 
-`docker-build` validates that the backend image still builds from the
-`Dockerfile`. It is **manual** and `allow_failure: true`, and uses
-Docker-in-Docker, so:
+`npm ci` **fails if `package.json` and `package-lock.json` are out of sync**, so
+the install step doubles as a lockfile check. Node is pinned by `.nvmrc` (Node
+22) through `setup-node`'s `node-version-file`, matching the project target and
+the `Dockerfile`; `setup-node` also caches the npm download directory keyed by
+the lockfile, so installs stay fast across runs.
 
-- it does not run automatically and never blocks the pipeline;
-- it works only on a runner with a Docker-in-Docker executor;
-- it **never pushes** the image to any registry.
+### No database or storage in CI
 
-If your runners don't provide Docker-in-Docker, simply ignore this job (or remove
-it) — the Node checks above are the required gate.
+The default tests are **unit-level and mocked** — they do **not** require a live
+PostgreSQL or MinIO. CI therefore starts **no service containers**: the quality
+gate needs only Node and the lockfile. Integration tests against real services
+may be added later as an opt-in job (see [Deferred](#deferred)).
+
+## Optional Docker job
+
+The `docker` job validates that the backend image still builds from the
+`Dockerfile`. It:
+
+- runs **only** on a manual `workflow_dispatch`
+  (`if: github.event_name == 'workflow_dispatch'`), never on push or pull
+  request;
+- is `continue-on-error: true`, so it never blocks the workflow result;
+- runs `docker build -t svoya-igra-backend:ci .` and **never pushes** the image
+  to any registry.
+
+If you don't need the image check, simply ignore this job — the quality gate
+above is the required gate.
 
 ## Deferred
 

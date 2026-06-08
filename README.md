@@ -1,5 +1,7 @@
 # Build Your Project Presentation — Backend
 
+[![CI](https://github.com/stepashx/svoya-igra-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/stepashx/svoya-igra-backend/actions/workflows/ci.yml)
+
 Backend for the educational real-time multiplayer game *"Своя игра: собери
 презентацию проекта"*. NestJS + TypeScript, PostgreSQL + Drizzle, MinIO
 (S3-compatible) storage, WebSocket (Socket.IO), and Swagger — REST and WebSocket
@@ -118,11 +120,13 @@ docker compose logs minio  # or postgres, to inspect a specific service
 
 ## Continuous integration
 
-[`.gitlab-ci.yml`](.gitlab-ci.yml) runs a foundation quality gate on GitLab:
-`install → typecheck → lint → test → build`, mirroring the npm scripts above so
-CI green means locally green. An optional **manual** `docker-build` job validates
-the image builds (it never pushes). There is **no deployment** — that is deferred
-until hosting is chosen, and migrations/seeds (Stage 5A) are not part of CI yet.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs a foundation quality
+gate on GitHub Actions for every push and pull request to `master` (and on demand
+from the Actions tab): `typecheck → lint → build → test`, mirroring the npm
+scripts above so CI green means locally green. Node is pinned by
+[`.nvmrc`](.nvmrc). An optional **manual** `docker` job validates the image builds
+(it never pushes). There is **no deployment** — that is deferred until hosting is
+chosen, and migrations/seeds (Stage 5A) are not part of CI yet.
 See [docs/ci.md](docs/ci.md).
 
 ## Host vs container
@@ -167,12 +171,13 @@ See [.env.example](.env.example) for the full annotated variable list and
   schema/migrations/seeds are Stage 5A.
 - [docs/realtime-events.md](docs/realtime-events.md) — WebSocket naming
   convention and event contract seam.
-- [docs/ci.md](docs/ci.md) — GitLab CI pipeline (stages, cache, deferred deploy).
+- [docs/ci.md](docs/ci.md) — GitHub Actions CI pipeline (triggers, quality gate,
+  optional Docker job, deferred deploy).
 
 ## Roadmap
 
-- **Stage 3E** — basic GitLab CI (install → typecheck → lint → test → build →
-  optional Docker build). *Done — see [docs/ci.md](docs/ci.md).*
+- **Stage 3E** — basic CI on GitHub Actions (typecheck → lint → build → test,
+  plus an optional manual Docker build). *Done — see [docs/ci.md](docs/ci.md).*
 - **Stage 5A** — Drizzle schema, versioned migrations, required static seeds, and
   the MinIO QR `.svg` placement procedure.
 - **Stage 5B+** — Game Session, Gameplay, Commerce, Presentation, and Evaluation
