@@ -10,15 +10,21 @@ import { ReconnectToken, RoomCode } from '../value-objects';
 const DEFAULT_TOTAL_QUESTIONS = 30;
 
 /**
- * Linear lobby stage flow (plan §13 / Этап2 §9). Each stage maps to its single
- * legal successor; branching transitions (SHOP loop, presentation, evaluation)
- * arrive with later sub-stages. A transition is legal iff the target equals the
- * mapped successor of the current stage.
+ * Legal stage flow (plan §13 / Этап2 §9). Each stage maps to the set of stages
+ * it may advance to; a transition is legal iff the target is in that set. The
+ * lobby path (LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD) is linear; the
+ * board loop branches — ANSWER_REVIEW returns to GAME_BOARD or enters SHOP, and
+ * SHOP returns to GAME_BOARD. Later edges (presentation, evaluation, field
+ * exhaustion) arrive with their sub-stages.
  */
-const LOBBY_STAGE_FLOW: Readonly<Partial<Record<GameStage, GameStage>>> = {
-  LOBBY: 'TEAM_SETUP',
-  TEAM_SETUP: 'READY_CHECK',
-  READY_CHECK: 'GAME_BOARD',
+const STAGE_FLOW: Readonly<Partial<Record<GameStage, readonly GameStage[]>>> = {
+  LOBBY: ['TEAM_SETUP'],
+  TEAM_SETUP: ['READY_CHECK'],
+  READY_CHECK: ['GAME_BOARD'],
+  GAME_BOARD: ['QUESTION_OPENED'],
+  QUESTION_OPENED: ['ANSWER_REVIEW'],
+  ANSWER_REVIEW: ['GAME_BOARD', 'SHOP'],
+  SHOP: ['GAME_BOARD'],
 };
 
 /** Fields required to start a brand-new room (caller-supplied id and identity). */
@@ -104,10 +110,10 @@ export class Room {
     );
   }
 
-  /** Advance to the next lobby stage; reject any transition not in the flow. */
+  /** Advance to a legal next stage; reject any transition not in the flow. */
   transitionTo(next: GameStage): void {
-    const successor = LOBBY_STAGE_FLOW[this._currentStage];
-    if (successor !== next) {
+    const allowed = STAGE_FLOW[this._currentStage] ?? [];
+    if (!allowed.includes(next)) {
       throw new InvalidStageTransitionError(this._currentStage, next);
     }
     this._currentStage = next;

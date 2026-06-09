@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { GameplayModule } from '../gameplay/gameplay.module';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { TRANSACTION_PORT } from './application/ports';
@@ -61,9 +62,13 @@ import {
  * {@link GameSessionGateway} (a second gateway on the shared io server), the
  * in-memory {@link LobbyPresenceRegistry}, the {@link SocketIdentityResolver},
  * and {@link MarkClientDisconnectedUseCase}. Game mutations stay REST.
+ *
+ * Sub-stage 6.1 imports {@link GameplayModule} for the board-init seam: it
+ * exports the BOARD_INITIALIZATION_PORT that StartGame invokes after the room
+ * reaches GAME_BOARD.
  */
 @Module({
-  imports: [InfrastructureModule, RealtimeModule],
+  imports: [InfrastructureModule, RealtimeModule, GameplayModule],
   controllers: [
     RoomsController,
     PlayersController,

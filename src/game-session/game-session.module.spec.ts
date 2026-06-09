@@ -7,7 +7,10 @@ import { REALTIME_EVENTS_PORT } from '../core/ports/realtime-events.port';
 import { TOKEN_GENERATOR_PORT } from '../core/ports/token-generator.port';
 import { DatabaseService } from '../infrastructure/database/database.service';
 import { TransactionContext } from '../infrastructure/database/transaction-context';
-import { TRANSACTION_PORT } from './application/ports';
+import {
+  BOARD_INITIALIZATION_PORT,
+  TRANSACTION_PORT,
+} from './application/ports';
 import {
   LobbyQueryService,
   RoomSnapshotAssembler,
@@ -27,6 +30,7 @@ import {
   UpdateProfileUseCase,
 } from './application/use-cases';
 import {
+  makeBoardInit,
   makeClock,
   makeConfig,
   makeIdGenerator,
@@ -95,6 +99,7 @@ describe('GameSessionModule wiring', () => {
         { provide: TEAM_REPOSITORY_PORT, useClass: DrizzleTeamRepository },
         { provide: TOPIC_REPOSITORY_PORT, useClass: DrizzleTopicRepository },
         { provide: TRANSACTION_PORT, useClass: DrizzleTransactionAdapter },
+        { provide: BOARD_INITIALIZATION_PORT, useValue: makeBoardInit() },
         CreateRoomUseCase,
         JoinRoomUseCase,
         ReconnectClientUseCase,

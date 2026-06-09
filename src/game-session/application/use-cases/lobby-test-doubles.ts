@@ -26,7 +26,7 @@ import {
   Score,
   TeamName,
 } from '../../domain/value-objects';
-import { TransactionPort } from '../ports';
+import { BoardInitializationPort, TransactionPort } from '../ports';
 
 /**
  * Shared in-memory test doubles for the lobby use-case specs. Excluded from the
@@ -73,6 +73,11 @@ export const makeTopicRepo = (): jest.Mocked<TopicRepositoryPort> => ({
 /** Runs work immediately — no real transaction. */
 export const makeTransactionPort = (): TransactionPort => ({
   run: (work) => work(),
+});
+
+/** No-op board initializer (the gameplay seam is exercised in its own specs). */
+export const makeBoardInit = (): jest.Mocked<BoardInitializationPort> => ({
+  initializeBoard: jest.fn().mockResolvedValue(undefined),
 });
 
 export const makeRealtime = (): jest.Mocked<RealtimeEventsPort> => ({
