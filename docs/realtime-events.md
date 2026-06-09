@@ -218,7 +218,11 @@ command handlers (see _forward-path_ below). What 5.2b ships:
   (`Player.findByReconnectToken` → `{ roomId, playerId }`) or the host
   (`Room.findByHostReconnectToken` → `{ roomId }`) — joins the socket to the
   room group, registers presence, and runs the existing `ReconnectClient` use
-  case. An unknown/blank token gets a single `error` then a forced disconnect.
+  case. A socket carrying **no** reconnect token (missing or empty) is **ignored**
+  by this gateway — it stays an anonymous transport socket served by the base
+  `RealtimeGateway` (it is never joined, never errored, never disconnected). Only
+  a **non-empty** token that fails to resolve gets a single `error` then a forced
+  disconnect.
 - **Presence registry.** An in-memory map of live sockets per identity
   (multi-tab safe): a player is marked `DISCONNECTED` only when their **last**
   socket drops. See _Presence model_ below.
@@ -265,10 +269,14 @@ The base `RealtimeGateway` remains pure transport.
 ### Reconnect flow (handshake)
 
 1. Read `auth.reconnectToken`/query (local `readReconnectToken` copy in
-   `presentation/ws/handshake.ts`; the base gateway is untouched).
-2. Resolve the principal. Player → `{ roomId, playerId }`; host → `{ roomId }`.
-   A missing/blank/unknown token → `emitToClient(server:game-session:error, {
-   code: 'INVALID_RECONNECT_TOKEN' })` then `client.disconnect(true)`.
+   `presentation/ws/handshake.ts`; the base gateway is untouched). **No token
+   (missing or empty) → return immediately:** the socket is left untouched as an
+   anonymous transport socket for the base `RealtimeGateway` (no join, no
+   presence, no `error`, no disconnect).
+2. Resolve the principal for the non-empty token. Player → `{ roomId, playerId }`;
+   host → `{ roomId }`. A token that does **not** resolve (unknown / malformed /
+   expired) → `emitToClient(server:game-session:error, { code:
+   'INVALID_RECONNECT_TOKEN' })` then `client.disconnect(true)`.
 3. `client.join(roomId)`; register the socket in the presence registry.
 4. `ReconnectClient.execute({ roomId, principalHint, playerId? })` — the player
    branch marks the player `CONNECTED` and broadcasts `client-reconnected`

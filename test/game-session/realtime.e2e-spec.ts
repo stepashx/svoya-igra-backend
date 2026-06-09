@@ -20,6 +20,7 @@ const ROOM_STATE = 'server:game-session:room-state';
 const GAME_SESSION_ERROR = 'server:game-session:error';
 const CLIENT_RECONNECTED = 'server:game-session:client-reconnected';
 const HOST_RECONNECTED = 'server:game-session:host-reconnected';
+const PLAYER_JOINED = 'server:game-session:player-joined';
 
 interface ConnectionRestored {
   roomId: string;
@@ -36,6 +37,10 @@ interface ClientReconnected {
 interface WsError {
   code: string;
   message: string;
+}
+interface PlayerJoined {
+  roomId: string;
+  player: { id: string; name: string };
 }
 
 describe('Realtime presence & reconnect (e2e)', () => {
@@ -210,5 +215,40 @@ describe('Realtime presence & reconnect (e2e)', () => {
     await awaitConnect(tab3);
     await reconnected;
     expect(await readPlayerConnectionStatus(alice.id)).toBe('CONNECTED');
+  });
+
+  // (f) Tokenless socket: the game-session gateway ignores it (no reconnect
+  // token), so no error and no forced disconnect. It stays connected as an
+  // anonymous transport socket served by the base RealtimeGateway.
+  it('(f) leaves a tokenless socket connected — no game-session:error, no disconnect', async () => {
+    const socket = connect();
+    await awaitConnect(socket);
+
+    // Negative window: the gateway must NOT reject a token-free handshake.
+    await expectNoEvent<WsError>(socket, GAME_SESSION_ERROR, { windowMs: 600 });
+    expect(socket.connected).toBe(true);
+  });
+
+  // (g) A REST mutation's room-wide broadcast reaches a live WS socket in the
+  // room group — proves the 5.2a emitToRoom path lands on a real socket through
+  // the actual RealtimeEventsPort (not a stub).
+  it('(g) delivers a REST-triggered player-joined broadcast to a socket in the room group', async () => {
+    const room = await createRoom(app);
+    const alice = await joinRoom(app, room.code, 'Alice');
+
+    // Alice's socket joins the room group during the handshake; awaiting
+    // room-state guarantees the join completed before the REST mutation fires.
+    const socket = connect(alice.token);
+    await awaitConnect(socket);
+    await awaitEvent(socket, ROOM_STATE);
+
+    const joined = awaitEvent<PlayerJoined>(socket, PLAYER_JOINED, {
+      match: (p) => p.player?.name === 'Bob',
+    });
+    const bob = await joinRoom(app, room.code, 'Bob');
+
+    const event = await joined;
+    expect(event.player.id).toBe(bob.id);
+    expect(event.roomId).toEqual(expect.any(String));
   });
 });

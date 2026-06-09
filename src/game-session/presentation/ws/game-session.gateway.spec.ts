@@ -142,6 +142,19 @@ describe('GameSessionGateway', () => {
       expect(resolver.resolve).toHaveBeenCalledWith('from-query');
     });
 
+    it('ignores a tokenless socket: no resolve, no emit, no disconnect, no join, no presence', async () => {
+      const { gateway, resolver, realtime, presence } = build();
+      const client = makeSocket();
+
+      await gateway.handleConnection(client);
+
+      expect(resolver.resolve).not.toHaveBeenCalled();
+      expect(realtime.emitToClient).not.toHaveBeenCalled();
+      expect(client.disconnect).not.toHaveBeenCalled();
+      expect(client.join).not.toHaveBeenCalled();
+      expect(presence.has('socket-1')).toBe(false);
+    });
+
     it('rejects an unknown token with one error then disconnects, without registering', async () => {
       const { gateway, resolver, reconnectClient, realtime, presence } =
         build();

@@ -54,7 +54,16 @@ export class GameSessionGateway
     // Nest does not await this hook, so the WHOLE body is guarded: a failure
     // becomes an originating-socket error emission, never an unhandled rejection.
     try {
-      const identity = await this.resolver.resolve(readReconnectToken(client));
+      const token = readReconnectToken(client);
+      // No reconnect token → this socket is not ours. Leave it untouched as an
+      // anonymous transport socket so the base RealtimeGateway still serves it
+      // (client:realtime:join-room/leave-room). Only a NON-EMPTY token that
+      // fails to resolve is a rejection; a missing/empty one is never an error.
+      if (token === undefined || token.length === 0) {
+        return;
+      }
+
+      const identity = await this.resolver.resolve(token);
       if (!identity) {
         this.realtime.emitToClient(client.id, GameSessionEvent.Error, {
           code: 'INVALID_RECONNECT_TOKEN',
