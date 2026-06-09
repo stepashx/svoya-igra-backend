@@ -1,6 +1,7 @@
 export * from './create-room.use-case';
 export * from './join-room.use-case';
 export * from './reconnect-client.use-case';
+export * from './mark-client-disconnected.use-case';
 export * from './create-team.use-case';
 export * from './join-team.use-case';
 export * from './leave-team.use-case';

@@ -1,11 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { DomainRuleError } from '../../../core/errors/app.error';
 import {
   REALTIME_EVENTS_PORT,
   RealtimeEventsPort,
 } from '../../../core/ports/realtime-events.port';
 import { Player } from '../../domain/entities';
 import {
+  CaptainCannotLeaveError,
   PlayerNotFoundError,
   RoomNotActiveError,
   RoomNotFoundError,
@@ -67,7 +67,7 @@ export class LeaveTeamUseCase {
       throw new TeamNotFoundError();
     }
     if (player.isCaptain) {
-      throw new DomainRuleError('The team captain cannot leave the team.');
+      throw new CaptainCannotLeaveError();
     }
 
     player.leaveTeam();

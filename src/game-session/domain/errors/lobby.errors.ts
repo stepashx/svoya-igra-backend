@@ -137,6 +137,19 @@ export class CaptainAlreadyAssignedError extends DomainRuleError {
   }
 }
 
+/**
+ * The team captain attempted to leave the team. Captaincy is assign-once and
+ * never demoted (Player has no demote, Team no captain-vacate), so a captain
+ * leaving would orphan the team — rejected as a domain-rule violation.
+ */
+export class CaptainCannotLeaveError extends DomainRuleError {
+  readonly code = 'CAPTAIN_CANNOT_LEAVE';
+
+  constructor(message = 'The team captain cannot leave the team.') {
+    super(message);
+  }
+}
+
 /** Attempted a stage transition that is not legal from the current stage. */
 export class InvalidStageTransitionError extends DomainRuleError {
   readonly code = 'INVALID_STAGE_TRANSITION';

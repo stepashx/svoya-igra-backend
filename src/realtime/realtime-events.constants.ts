@@ -19,6 +19,8 @@ export const EventAudience = {
   Host: 'host',
   Team: 'team',
   Captain: 'captain',
+  /** Only the single source socket — snapshots/errors returned to the caller. */
+  OriginatingSocket: 'originating-socket',
 } as const;
 
 export type EventAudience = (typeof EventAudience)[keyof typeof EventAudience];

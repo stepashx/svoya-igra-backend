@@ -205,3 +205,108 @@ Shared projections (value objects unwrapped to primitives):
 broadcast room-wide (no socket presence yet) and clients may ignore it.
 `player-left` (room leave) is not emitted in 5.2a — leaving a *team* emits
 `team-updated`.
+
+## Stage 5.2b — WebSocket presence, reconnect & snapshot
+
+Sub-stage 5.2b adds the socket side of reconnect on top of 5.2a. **Game
+mutations stay REST** — there are still no incoming `client:game-session:*`
+command handlers (see _forward-path_ below). What 5.2b ships:
+
+- **Socket identity on the handshake.** A client opens the socket with
+  `auth.reconnectToken` (or `?reconnectToken=`). The `GameSessionGateway`
+  (`src/game-session/presentation/ws/`) resolves the principal — a player
+  (`Player.findByReconnectToken` → `{ roomId, playerId }`) or the host
+  (`Room.findByHostReconnectToken` → `{ roomId }`) — joins the socket to the
+  room group, registers presence, and runs the existing `ReconnectClient` use
+  case. An unknown/blank token gets a single `error` then a forced disconnect.
+- **Presence registry.** An in-memory map of live sockets per identity
+  (multi-tab safe): a player is marked `DISCONNECTED` only when their **last**
+  socket drops. See _Presence model_ below.
+- **Originating-socket snapshot.** After a successful reconnect the gateway
+  sends `connection-restored` then the full `room-state` snapshot to **that
+  socket only** (`emitToClient`), while the room-wide `client-reconnected` /
+  `host-reconnected` broadcast is emitted by `ReconnectClient` (unchanged from
+  5.2a).
+
+### Two gateways, one Socket.IO server
+
+`GameSessionGateway` is a second `@WebSocketGateway()` (no namespace) that
+attaches to the **same** Socket.IO server as the transport-only
+`RealtimeGateway`. It never injects `@WebSocketServer()`: it groups sockets with
+`client.join(roomId)` and publishes through `RealtimeEventsPort`
+(`emitToClient` / `emitToRoom`), so the application layer stays transport-free.
+The base `RealtimeGateway` remains pure transport.
+
+### Who emits what
+
+| Scope | Emitter | Via |
+|---|---|---|
+| room-wide lobby/game broadcasts | use cases (5.2a, unchanged) | `emitToRoom` |
+| `client-reconnected` / `host-reconnected` (room) | `ReconnectClient` (unchanged) | `emitToRoom` |
+| `connection-lost` (room) | `MarkClientDisconnectedUseCase` | `emitToRoom` |
+| `connection-restored`, `room-state`, `error` (originating) | `GameSessionGateway` | `emitToClient(client.id, …)` |
+
+### Originating-socket & connection payloads (5.2b)
+
+`RoomStateResponseDto` is the same shape the REST room-state endpoints return
+(`{ room, players[], teams[] }`).
+
+| Canonical name | Area | Audience | Payload |
+|---|---|---|---|
+| `server:realtime:connection-lost` | realtime | room | `{ roomId, playerId }` |
+| `server:realtime:connection-restored` | realtime | originating | `{ roomId, playerId: string \| null }` (`null` for the host) |
+| `server:game-session:room-state` | game-session | originating | `RoomStateResponseDto` |
+| `server:game-session:error` | game-session | originating | `{ code, message }` (an `AppError`, e.g. `INVALID_RECONNECT_TOKEN`) |
+| `server:realtime:error` | realtime | originating | `{ code: 'INTERNAL_ERROR', message: 'Internal error' }` (non-`AppError`, secret-free) |
+
+`client-reconnected` `{ roomId, player: PlayerSummary }` and `host-reconnected`
+`{ roomId, hostId }` keep their 5.2a shape and room audience.
+
+### Reconnect flow (handshake)
+
+1. Read `auth.reconnectToken`/query (local `readReconnectToken` copy in
+   `presentation/ws/handshake.ts`; the base gateway is untouched).
+2. Resolve the principal. Player → `{ roomId, playerId }`; host → `{ roomId }`.
+   A missing/blank/unknown token → `emitToClient(server:game-session:error, {
+   code: 'INVALID_RECONNECT_TOKEN' })` then `client.disconnect(true)`.
+3. `client.join(roomId)`; register the socket in the presence registry.
+4. `ReconnectClient.execute({ roomId, principalHint, playerId? })` — the player
+   branch marks the player `CONNECTED` and broadcasts `client-reconnected`
+   room-wide; the host branch broadcasts `host-reconnected`. It **returns** the
+   room snapshot.
+5. The gateway sends `connection-restored` then `room-state` to the originating
+   socket from the returned snapshot.
+
+`handleConnection` is `async` and Nest does not await it, so its whole body runs
+in `try/catch`: a thrown `AppError` becomes a `game-session:error`, anything
+else a secret-free `realtime:error`.
+
+### Disconnect
+
+On `handleDisconnect` the gateway unregisters the socket from presence:
+
+- **Host** — cleanup only. No event; the room stays alive (plan §14.1).
+- **Player, last socket of that identity** — `MarkClientDisconnectedUseCase`
+  marks the player `DISCONNECTED` and broadcasts `connection-lost` room-wide.
+- **Player, another socket still open** — cleanup only (multi-tab).
+
+### Presence model
+
+The registry holds a forward map `socketId → entry` and a reverse map
+`identityKey → Set<socketId>` (`identityKey`: player `p:<playerId>`, host
+`h:<roomId>`). `markDisconnected` fires only when the **last** socket of an
+identity leaves. It is **in-memory, per process** — correct for the single-node
+MVP. Multi-node presence (a shared store / the Socket.IO Redis adapter) is
+out of scope and deferred.
+
+### Deliberate omissions (5.2b)
+
+- **Forward-path `client:game-session:*` commands are not implemented.** Every
+  game mutation stays REST; the command rows above remain the planned WS
+  forward-path.
+- **No host-disconnect event.** A host dropping is cleanup-only by design
+  (§14.1) — the room must outlive a host reload.
+- **No token TTL.** An expired token is simply "not found" and takes the same
+  invalid-token path; TTL enforcement is post-MVP.
+- **`game:canStartChanged` stays room-wide.** Narrowing it to a host audience
+  needs `emitToHost` + a reverse host-socket lookup and is deferred.

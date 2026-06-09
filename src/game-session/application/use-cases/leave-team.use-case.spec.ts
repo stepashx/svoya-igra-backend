@@ -1,5 +1,9 @@
 import { DomainRuleError } from '../../../core/errors/app.error';
-import { RoomNotActiveError, TeamNotFoundError } from '../../domain/errors';
+import {
+  CaptainCannotLeaveError,
+  RoomNotActiveError,
+  TeamNotFoundError,
+} from '../../domain/errors';
 import { GameSessionEvent } from '../events';
 import { LeaveTeamUseCase } from './leave-team.use-case';
 import {
@@ -49,12 +53,21 @@ describe('LeaveTeamUseCase', () => {
     );
   });
 
-  it('forbids the captain from leaving', async () => {
+  it('forbids the captain from leaving with a specific CaptainCannotLeaveError', async () => {
     const { uc, players } = build();
     players.findById.mockResolvedValue(
       makePlayer({ id: 'captain-1', teamId: 'team-1', isCaptain: true }),
     );
-    await expect(uc.execute(input)).rejects.toBeInstanceOf(DomainRuleError);
+
+    const error: unknown = await uc.execute(input).catch((e: unknown) => e);
+
+    // Still a DomainRuleError (→ 409) so the existing contract holds, now with a
+    // stable, machine-readable code.
+    expect(error).toBeInstanceOf(DomainRuleError);
+    expect(error).toBeInstanceOf(CaptainCannotLeaveError);
+    expect((error as CaptainCannotLeaveError).code).toBe(
+      'CAPTAIN_CANNOT_LEAVE',
+    );
   });
 
   it('rejects leaving a team the player is not on', async () => {

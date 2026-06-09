@@ -12,6 +12,7 @@ import {
   makeRoomRepo,
   makeTeam,
   makeTeamRepo,
+  makeTransactionPort,
 } from './lobby-test-doubles';
 
 const emittedEvents = (realtime: ReturnType<typeof makeRealtime>): string[] =>
@@ -35,7 +36,13 @@ describe('MarkTeamReadyUseCase', () => {
     teams.findById.mockResolvedValue(
       makeTeam({ id: 'team-1', captainPlayerId: 'captain-1' }),
     );
-    const uc = new MarkTeamReadyUseCase(rooms, teams, realtime, makeConfig());
+    const uc = new MarkTeamReadyUseCase(
+      rooms,
+      teams,
+      realtime,
+      makeTransactionPort(),
+      makeConfig(),
+    );
     return { uc, rooms, teams, realtime, room };
   };
 
@@ -65,6 +72,20 @@ describe('MarkTeamReadyUseCase', () => {
       GameSessionEvent.GameCanStartChanged,
       GameSessionEvent.GameStageChanged,
     ]);
+  });
+
+  it('takes the per-room advisory lock before mutating', async () => {
+    const { uc, rooms, teams } = build();
+    teams.findByRoomId.mockResolvedValue([
+      makeTeam({ id: 'team-1', isReady: true }),
+    ]);
+
+    await uc.execute(input);
+
+    expect(rooms.acquireRoomLock).toHaveBeenCalledWith('room-1');
+    expect(rooms.acquireRoomLock.mock.invocationCallOrder[0]).toBeLessThan(
+      teams.update.mock.invocationCallOrder[0],
+    );
   });
 
   it('does not advance the stage below the threshold', async () => {

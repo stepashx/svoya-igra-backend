@@ -19,6 +19,7 @@ import {
   JoinRoomUseCase,
   JoinTeamUseCase,
   LeaveTeamUseCase,
+  MarkClientDisconnectedUseCase,
   MarkTeamReadyUseCase,
   ReconnectClientUseCase,
   SelectTopicUseCase,
@@ -54,6 +55,11 @@ import {
   TopicsController,
 } from './presentation/controllers';
 import { HostAuthGuard, PlayerIdentityGuard } from './presentation/http';
+import {
+  GameSessionGateway,
+  LobbyPresenceRegistry,
+  SocketIdentityResolver,
+} from './presentation/ws';
 
 /**
  * Verifies the DI wiring of GameSessionModule without the real
@@ -100,10 +106,14 @@ describe('GameSessionModule wiring', () => {
         MarkTeamReadyUseCase,
         StartGameUseCase,
         CloseRoomUseCase,
+        MarkClientDisconnectedUseCase,
         RoomSnapshotAssembler,
         LobbyQueryService,
         HostAuthGuard,
         PlayerIdentityGuard,
+        GameSessionGateway,
+        LobbyPresenceRegistry,
+        SocketIdentityResolver,
       ],
     }).compile();
 
@@ -140,6 +150,23 @@ describe('GameSessionModule wiring', () => {
     expect(moduleRef.get(HostAuthGuard)).toBeInstanceOf(HostAuthGuard);
     expect(moduleRef.get(PlayerIdentityGuard)).toBeInstanceOf(
       PlayerIdentityGuard,
+    );
+    await moduleRef.close();
+  });
+
+  it('instantiates the WebSocket presence/reconnect providers (5.2b)', async () => {
+    const moduleRef = await buildModule();
+    expect(moduleRef.get(GameSessionGateway)).toBeInstanceOf(
+      GameSessionGateway,
+    );
+    expect(moduleRef.get(LobbyPresenceRegistry)).toBeInstanceOf(
+      LobbyPresenceRegistry,
+    );
+    expect(moduleRef.get(SocketIdentityResolver)).toBeInstanceOf(
+      SocketIdentityResolver,
+    );
+    expect(moduleRef.get(MarkClientDisconnectedUseCase)).toBeInstanceOf(
+      MarkClientDisconnectedUseCase,
     );
     await moduleRef.close();
   });

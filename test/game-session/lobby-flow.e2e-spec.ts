@@ -83,4 +83,31 @@ describe('Lobby happy-path flow (e2e)', () => {
     expect(names).toContain('server:game-session:game-started');
     expect(names).toContain('server:game-session:game-turn-changed');
   });
+
+  it('serialises concurrent setReady under the per-room lock → READY_CHECK → start', async () => {
+    const room = await createRoom(app);
+    const alice = await joinRoom(app, room.code, 'Alice');
+    const bob = await joinRoom(app, room.code, 'Bob');
+    const reds = await createTeam(app, room.code, alice.token, 'Reds');
+    const blues = await createTeam(app, room.code, bob.token, 'Blues');
+
+    // Both captains flip ready at the same instant. The per-room advisory lock
+    // serialises the ready-count read and the threshold transition, so the room
+    // reaches READY_CHECK exactly once (no lost update) and the host can start.
+    await Promise.all([
+      setReady(app, room.code, reds.id, alice.token, true),
+      setReady(app, room.code, blues.id, bob.token, true),
+    ]);
+
+    const stageChanges = events.filter(
+      (e) => e.event === 'server:game-session:game-stage-changed',
+    );
+    const readyCheckTransitions = stageChanges.filter(
+      (e) => (e.payload as { stage?: string }).stage === 'READY_CHECK',
+    );
+    expect(readyCheckTransitions).toHaveLength(1);
+
+    const snapshot = await startGame(app, room.code, room.hostToken);
+    expect(snapshot.room.currentStage).toBe('GAME_BOARD');
+  });
 });
