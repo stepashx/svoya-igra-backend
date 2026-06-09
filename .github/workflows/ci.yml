@@ -68,20 +68,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      minio:
-        # db:seed provisions the bucket and uploads placeholder QR objects, so
-        # MinIO must be reachable too.
-        image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-        ports:
-          - 9000:9000
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/svoya_igra
       MINIO_ENDPOINT: localhost
@@ -102,6 +88,32 @@ jobs:
           cache: npm
       - name: Install (reproducible, from lockfile)
         run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Start MinIO
+        # GitHub Actions service containers cannot override an image's command,
+        # and `minio/minio` with no command just prints help and exits. So MinIO
+        # runs as a step where we can pass `server /data` (mirrors docker-compose.yml).
+        # Root credentials are sourced from the job's MINIO_ACCESS_KEY/MINIO_SECRET_KEY
+        # so the server's root user equals the keys the app and seed authenticate with.
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 -p 9001:9001 \
+            -e MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
+            -e MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z \
+            server /data --console-address ":9001"
+      - name: Wait for MinIO to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+              echo "MinIO is ready"
+              exit 0
+            fi
+            echo "Waiting for MinIO... ($i/30)"
+            sleep 2
+          done
+          echo "::error::MinIO did not become ready within 60s"
+          docker logs minio || true
+          exit 1
       - name: Apply migrations
         run: npm run db:migrate
       - name: Seed catalogs (and MinIO bucket)
