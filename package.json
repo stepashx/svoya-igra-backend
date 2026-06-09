@@ -21,6 +21,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
+    "test:e2e": "jest -c test/jest-e2e.json",
     "docker:config": "docker compose config",
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down",

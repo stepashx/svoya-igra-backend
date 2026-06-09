@@ -1,6 +1,7 @@
 import {
   InvalidQuestionCountsError,
   InvalidStageTransitionError,
+  RoomNotActiveError,
 } from '../errors';
 import { GameStage, RoomStatus } from '../types';
 import { ReconnectToken, RoomCode } from '../value-objects';
@@ -119,14 +120,23 @@ export class Room {
 
   /** Host-initiated closure: the room leaves ACTIVE for CLOSED. */
   close(now: Date): void {
+    this.assertActive();
     this._status = 'CLOSED';
     this._finishedAt = now;
   }
 
   /** The game ran to completion: the room leaves ACTIVE for FINISHED. */
   markFinished(now: Date): void {
+    this.assertActive();
     this._status = 'FINISHED';
     this._finishedAt = now;
+  }
+
+  /** Terminal-state guard: closure/finish are legal only from ACTIVE. */
+  private assertActive(): void {
+    if (this._status !== 'ACTIVE') {
+      throw new RoomNotActiveError();
+    }
   }
 
   private assertQuestionCounts(): void {

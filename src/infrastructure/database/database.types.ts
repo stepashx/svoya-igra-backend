@@ -12,3 +12,10 @@ export type DrizzleDatabase = NodePgDatabase<typeof schema>;
 export type DrizzleTransaction = Parameters<
   Parameters<DrizzleDatabase['transaction']>[0]
 >[0];
+
+/**
+ * Either query executor a repository may run on: the pooled Drizzle client or
+ * an ambient transaction. Repositories resolve one of these per call so the
+ * same query code participates in a transaction when one is active.
+ */
+export type DbExecutor = DrizzleDatabase | DrizzleTransaction;

@@ -1,34 +1,47 @@
 import { Injectable } from '@nestjs/common';
 import { and, count, eq } from 'drizzle-orm';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
-import { DrizzleDatabase } from '../../../infrastructure/database/database.types';
+import { DbExecutor } from '../../../infrastructure/database/database.types';
+import { TransactionContext } from '../../../infrastructure/database/transaction-context';
 import { teams } from '../../../infrastructure/database/schema';
 import { Team } from '../../domain/entities';
 import { TeamRepositoryPort } from '../../domain/ports';
 import { mapRowToTeam, mapTeamToInsert, mapTeamToUpdate } from './mappers';
+import { translateUniqueViolation } from './pg-error.util';
 
 /** Drizzle/PostgreSQL adapter for {@link TeamRepositoryPort}. */
 @Injectable()
 export class DrizzleTeamRepository implements TeamRepositoryPort {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly txContext: TransactionContext,
+  ) {}
 
-  private get executor(): DrizzleDatabase {
-    return this.database.db;
+  private executor(): DbExecutor {
+    return this.txContext.current ?? this.database.db;
   }
 
   async create(team: Team): Promise<void> {
-    await this.executor.insert(teams).values(mapTeamToInsert(team));
+    try {
+      await this.executor().insert(teams).values(mapTeamToInsert(team));
+    } catch (error) {
+      translateUniqueViolation(error);
+    }
   }
 
   async update(team: Team): Promise<void> {
-    await this.executor
-      .update(teams)
-      .set(mapTeamToUpdate(team))
-      .where(eq(teams.id, team.id));
+    try {
+      await this.executor()
+        .update(teams)
+        .set(mapTeamToUpdate(team))
+        .where(eq(teams.id, team.id));
+    } catch (error) {
+      translateUniqueViolation(error);
+    }
   }
 
   async findById(id: string): Promise<Team | null> {
-    const [row] = await this.executor
+    const [row] = await this.executor()
       .select()
       .from(teams)
       .where(eq(teams.id, id))
@@ -37,7 +50,7 @@ export class DrizzleTeamRepository implements TeamRepositoryPort {
   }
 
   async findByRoomId(roomId: string): Promise<Team[]> {
-    const rows = await this.executor
+    const rows = await this.executor()
       .select()
       .from(teams)
       .where(eq(teams.roomId, roomId));
@@ -45,7 +58,7 @@ export class DrizzleTeamRepository implements TeamRepositoryPort {
   }
 
   async countByRoomId(roomId: string): Promise<number> {
-    const [row] = await this.executor
+    const [row] = await this.executor()
       .select({ value: count() })
       .from(teams)
       .where(eq(teams.roomId, roomId));
@@ -56,7 +69,7 @@ export class DrizzleTeamRepository implements TeamRepositoryPort {
     roomId: string,
     topicId: string,
   ): Promise<Team | null> {
-    const [row] = await this.executor
+    const [row] = await this.executor()
       .select()
       .from(teams)
       .where(and(eq(teams.roomId, roomId), eq(teams.selectedTopicId, topicId)))

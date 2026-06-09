@@ -1,42 +1,89 @@
-import { Controller, Get, NotImplementedException, Post } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotImplementedException,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiHeader,
+  ApiOkResponse,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
+import { LobbyQueryService } from '../../application/queries';
+import { StartGameUseCase } from '../../application/use-cases';
+import {
+  RoomStateResponseDto,
+  StageResponseDto,
+  TeamResponseDto,
+} from '../dto/response';
+import {
+  CurrentHost,
+  HOST_TOKEN_HEADER,
+  HostAuthGuard,
+  HostContext,
+} from '../http';
+import {
+  toRoomStateResponse,
+  toStageResponse,
+  toTeamResponse,
+} from '../mappers';
 
-const NOT_IMPLEMENTED = 'Not implemented yet — arrives in sub-stage 5.2.';
+const NOT_IMPLEMENTED = 'Gameplay flow arrives in a later sub-stage.';
 
 /**
- * Game-flow REST surface (plan §15.7), nested under a room. Sub-stage 5.1 ships
- * route stubs only: every handler returns 501. No DTOs yet.
+ * Game-flow REST surface (plan §15.7), nested under a room. Sub-stage 5.2a
+ * implements game start plus the lobby/game read endpoints; the gameplay
+ * controls (timer / advance / finish) remain 501 until later sub-stages.
  */
 @ApiTags(SwaggerTag.GameSession)
 @Controller('rooms/:code/game')
 export class GameController {
+  constructor(
+    private readonly startGame: StartGameUseCase,
+    private readonly lobby: LobbyQueryService,
+  ) {}
+
   @Post('start')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(HostAuthGuard)
+  @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Start the game' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED })
-  start(): never {
-    throw new NotImplementedException();
+  @ApiOkResponse({ type: RoomStateResponseDto })
+  async start(@CurrentHost() host: HostContext): Promise<RoomStateResponseDto> {
+    return toRoomStateResponse(
+      await this.startGame.execute({ roomId: host.roomId }),
+    );
   }
 
   @Get('state')
   @ApiOperation({ summary: 'Get the overall game state' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED })
-  getState(): never {
-    throw new NotImplementedException();
+  @ApiOkResponse({ type: RoomStateResponseDto })
+  async getState(@Param('code') code: string): Promise<RoomStateResponseDto> {
+    return toRoomStateResponse(await this.lobby.getRoomState(code));
   }
 
   @Get('stage')
   @ApiOperation({ summary: 'Get the current stage' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED })
-  getStage(): never {
-    throw new NotImplementedException();
+  @ApiOkResponse({ type: StageResponseDto })
+  async getStage(@Param('code') code: string): Promise<StageResponseDto> {
+    return toStageResponse(await this.lobby.getRoom(code));
   }
 
   @Get('active-team')
   @ApiOperation({ summary: 'Get the active team' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED })
-  getActiveTeam(): never {
-    throw new NotImplementedException();
+  @ApiOkResponse({ type: TeamResponseDto })
+  async getActiveTeam(
+    @Param('code') code: string,
+  ): Promise<TeamResponseDto | null> {
+    const team = await this.lobby.getActiveTeam(code);
+    return team ? toTeamResponse(team) : null;
   }
 
   @Get('timer')

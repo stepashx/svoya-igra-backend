@@ -1,5 +1,24 @@
 import { Module } from '@nestjs/common';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
+import { RealtimeModule } from '../realtime/realtime.module';
+import { TRANSACTION_PORT } from './application/ports';
+import {
+  LobbyQueryService,
+  RoomSnapshotAssembler,
+} from './application/queries';
+import {
+  CloseRoomUseCase,
+  CreateRoomUseCase,
+  CreateTeamUseCase,
+  JoinRoomUseCase,
+  JoinTeamUseCase,
+  LeaveTeamUseCase,
+  MarkTeamReadyUseCase,
+  ReconnectClientUseCase,
+  SelectTopicUseCase,
+  StartGameUseCase,
+  UpdateProfileUseCase,
+} from './application/use-cases';
 import {
   PLAYER_REPOSITORY_PORT,
   ROOM_REPOSITORY_PORT,
@@ -11,6 +30,7 @@ import {
   DrizzleRoomRepository,
   DrizzleTeamRepository,
   DrizzleTopicRepository,
+  DrizzleTransactionAdapter,
 } from './infrastructure/persistence';
 import {
   GameController,
@@ -19,22 +39,20 @@ import {
   TeamsController,
   TopicsController,
 } from './presentation/controllers';
+import { HostAuthGuard, PlayerIdentityGuard } from './presentation/http';
 
 /**
  * Game Session feature area. Internal layering: domain / application /
  * infrastructure / presentation.
  *
- * Sub-stage 5.1 ships the persistence skeleton and lobby domain only: entities,
- * value objects, the four repository ports and their Drizzle adapters, and 501
- * controller stubs. Lobby use cases, host-auth, WebSocket emission and real DTOs
- * arrive in 5.2.
- *
- * Persistence is FOUR separate repositories per Этап2 §15
- * (Room / Player / Team / Topic), each its own port + Drizzle adapter — not the
- * single `GameSessionRepositoryAdapter` the old Stage 3A placeholder described.
+ * Sub-stage 5.2a wires the lobby use cases, the read-model queries, the
+ * transactional boundary adapter, and the host/player route guards on top of the
+ * 5.1 persistence skeleton. Use cases broadcast room-wide events through the
+ * RealtimeEventsPort (imported from {@link RealtimeModule}); the four
+ * repositories are transaction-aware via the shared TransactionContext.
  */
 @Module({
-  imports: [InfrastructureModule],
+  imports: [InfrastructureModule, RealtimeModule],
   controllers: [
     RoomsController,
     PlayersController,
@@ -43,11 +61,30 @@ import {
     GameController,
   ],
   providers: [
+    // Persistence ports → Drizzle adapters.
     { provide: ROOM_REPOSITORY_PORT, useClass: DrizzleRoomRepository },
     { provide: PLAYER_REPOSITORY_PORT, useClass: DrizzlePlayerRepository },
     { provide: TEAM_REPOSITORY_PORT, useClass: DrizzleTeamRepository },
     { provide: TOPIC_REPOSITORY_PORT, useClass: DrizzleTopicRepository },
+    { provide: TRANSACTION_PORT, useClass: DrizzleTransactionAdapter },
+    // Lobby use cases.
+    CreateRoomUseCase,
+    JoinRoomUseCase,
+    ReconnectClientUseCase,
+    CreateTeamUseCase,
+    JoinTeamUseCase,
+    LeaveTeamUseCase,
+    UpdateProfileUseCase,
+    SelectTopicUseCase,
+    MarkTeamReadyUseCase,
+    StartGameUseCase,
+    CloseRoomUseCase,
+    // Read models.
+    RoomSnapshotAssembler,
+    LobbyQueryService,
+    // Route guards.
+    HostAuthGuard,
+    PlayerIdentityGuard,
   ],
-  exports: [],
 })
 export class GameSessionModule {}

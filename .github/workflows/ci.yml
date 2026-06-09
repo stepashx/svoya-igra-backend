@@ -51,6 +51,64 @@ jobs:
             git --no-pager diff -- src/infrastructure/database/migrations
             exit 1
           fi
+  e2e:
+    name: E2E (REST against Postgres + MinIO)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: svoya_igra
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d svoya_igra"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      minio:
+        # db:seed provisions the bucket and uploads placeholder QR objects, so
+        # MinIO must be reachable too.
+        image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/svoya_igra
+      MINIO_ENDPOINT: localhost
+      MINIO_PORT: "9000"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: svoya-igra
+      MINIO_PUBLIC_URL: http://localhost:9000
+      MINIO_USE_SSL: "false"
+      MINIO_PATH_STYLE: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install (reproducible, from lockfile)
+        run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Apply migrations
+        run: npm run db:migrate
+      - name: Seed catalogs (and MinIO bucket)
+        run: npm run db:seed
+      - name: E2E tests
+        run: npm run test:e2e
+
   docker:
     name: Docker image build (optional)
     if: github.event_name == 'workflow_dispatch'

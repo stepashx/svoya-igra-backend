@@ -157,3 +157,51 @@ token — it refines the single plan `error` into transport vs. domain.
   `client:realtime:leave-room` already exist in
   `realtime-events.constants.ts`. They only attach/detach the socket to a room
   channel — they are **not** room membership.
+
+## Stage 5.2a — what ships now
+
+Sub-stage 5.2a implements the lobby over **REST** and emits the room-wide
+broadcasts below from the use cases via `RealtimeEventsPort.emitToRoom`
+(audience: room). The constants live in
+`src/game-session/application/events/game-session-events.ts`.
+
+**Incoming `client:game-session:*` commands are deferred (forward-path).** In
+5.2a there are no WebSocket command handlers: every mutation (create/join room,
+team actions, profile, start, close, reconnect) is a REST call. The
+`client:game-session:*` rows above are the planned 5.2b WS forward-path and are
+not wired yet. Host/team/captain-scoped delivery, the originating-socket
+`room:state`/`error` snapshots, and the connection-lifecycle events
+(`connection:lost/restored`, `client/host:reconnected` over the socket) are also
+5.2b — 5.2a only emits room-wide.
+
+### Room-wide event payloads (5.2a)
+
+Shared projections (value objects unwrapped to primitives):
+
+- **RoomSummary** = `{ id, code, status, currentStage, currentTeamId }`
+- **PlayerSummary** = `{ id, roomId, teamId, name, avatar, isCaptain, connectionStatus }`
+- **TeamSummary** = `{ id, roomId, name, captainPlayerId, selectedTopicId, isReady, turnOrder }`
+
+| Canonical name | Payload |
+|---|---|
+| `server:game-session:player-joined` | `{ roomId, player: PlayerSummary }` |
+| `server:game-session:player-profile-updated` | `{ roomId, player: PlayerSummary }` |
+| `server:game-session:team-created` | `{ roomId, team: TeamSummary, captain: PlayerSummary }` |
+| `server:game-session:team-joined` | `{ roomId, teamId, player: PlayerSummary }` |
+| `server:game-session:team-updated` | `{ roomId, teamId, team: TeamSummary }` |
+| `server:game-session:team-topic-selected` | `{ roomId, team: TeamSummary }` |
+| `server:game-session:team-ready-changed` | `{ roomId, team: TeamSummary }` |
+| `server:game-session:game-can-start-changed` | `{ roomId, canStart: boolean, readyCount: number }` |
+| `server:game-session:room-closed` | `{ roomId, room: RoomSummary }` |
+| `server:game-session:client-reconnected` | `{ roomId, player: PlayerSummary }` |
+| `server:game-session:host-reconnected` | `{ roomId, hostId }` |
+| `server:game-session:game-started` | `{ roomId, room: RoomSummary, teams: TeamSummary[] }` |
+| `server:game-session:game-first-team-selected` | `{ roomId, currentTeamId }` |
+| `server:game-session:game-stage-changed` | `{ roomId, stage }` |
+| `server:game-session:game-turn-changed` | `{ roomId, currentTeamId }` |
+| `server:game-session:game-state-updated` | `{ roomId, room: RoomSummary, teams: TeamSummary[] }` |
+
+`game-can-start-changed` is a host-audience event in the catalog; in 5.2a it is
+broadcast room-wide (no socket presence yet) and clients may ignore it.
+`player-left` (room leave) is not emitted in 5.2a — leaving a *team* emits
+`team-updated`.

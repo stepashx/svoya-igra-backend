@@ -1,6 +1,7 @@
 import {
   InvalidQuestionCountsError,
   InvalidStageTransitionError,
+  RoomNotActiveError,
 } from '../errors';
 import { ReconnectToken, RoomCode } from '../value-objects';
 import { Room } from './room';
@@ -67,6 +68,28 @@ describe('Room', () => {
     room.markFinished(finishedAt);
     expect(room.status).toBe('FINISHED');
     expect(room.finishedAt).toBe(finishedAt);
+  });
+
+  it('rejects closing a room that is not ACTIVE', () => {
+    const room = makeRoom();
+    room.close(new Date('2026-01-01T01:00:00.000Z'));
+    expect(() => room.close(new Date('2026-01-01T01:30:00.000Z'))).toThrow(
+      RoomNotActiveError,
+    );
+    expect(() =>
+      room.markFinished(new Date('2026-01-01T01:30:00.000Z')),
+    ).toThrow(RoomNotActiveError);
+  });
+
+  it('rejects finishing a room that is not ACTIVE', () => {
+    const room = makeRoom();
+    room.markFinished(new Date('2026-01-01T02:00:00.000Z'));
+    expect(() =>
+      room.markFinished(new Date('2026-01-01T02:30:00.000Z')),
+    ).toThrow(RoomNotActiveError);
+    expect(() => room.close(new Date('2026-01-01T02:30:00.000Z'))).toThrow(
+      RoomNotActiveError,
+    );
   });
 
   it('enforces blockedQuestionsCount <= totalQuestionsCount', () => {
