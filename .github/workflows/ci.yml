@@ -51,6 +51,76 @@ jobs:
             git --no-pager diff -- src/infrastructure/database/migrations
             exit 1
           fi
+  e2e:
+    name: E2E (REST against Postgres + MinIO)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: svoya_igra
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d svoya_igra"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/svoya_igra
+      MINIO_ENDPOINT: localhost
+      MINIO_PORT: "9000"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: svoya-igra
+      MINIO_PUBLIC_URL: http://localhost:9000
+      MINIO_USE_SSL: "false"
+      MINIO_PATH_STYLE: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install (reproducible, from lockfile)
+        run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Start MinIO
+        # GitHub Actions service containers cannot override an image's command,
+        # and `minio/minio` with no command just prints help and exits. So MinIO
+        # runs as a step where we can pass `server /data` (mirrors docker-compose.yml).
+        # Root credentials are sourced from the job's MINIO_ACCESS_KEY/MINIO_SECRET_KEY
+        # so the server's root user equals the keys the app and seed authenticate with.
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 -p 9001:9001 \
+            -e MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
+            -e MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z \
+            server /data --console-address ":9001"
+      - name: Wait for MinIO to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+              echo "MinIO is ready"
+              exit 0
+            fi
+            echo "Waiting for MinIO... ($i/30)"
+            sleep 2
+          done
+          echo "::error::MinIO did not become ready within 60s"
+          docker logs minio || true
+          exit 1
+      - name: Apply migrations
+        run: npm run db:migrate
+      - name: Seed catalogs (and MinIO bucket)
+        run: npm run db:seed
+      - name: E2E tests
+        run: npm run test:e2e
+
   docker:
     name: Docker image build (optional)
     if: github.event_name == 'workflow_dispatch'

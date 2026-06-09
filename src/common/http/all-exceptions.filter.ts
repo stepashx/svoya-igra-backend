@@ -6,19 +6,37 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { AppError } from '../../core/errors/app.error';
+import {
+  AppError,
+  DomainRuleError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '../../core/errors/app.error';
 import { ApiErrorResponse } from './api-error-response';
 
 /**
- * Maps base AppError codes to HTTP statuses. Only the shared/base errors live
- * here — feature-specific error catalogs are intentionally out of scope for the
- * foundation and arrive with their stages.
+ * Maps an {@link AppError} to its HTTP status by its position in the semantic
+ * hierarchy — not by its machine `code`. Feature catalogs extend these bases
+ * (e.g. `RoomNotFoundError extends NotFoundError`) and inherit the mapping while
+ * carrying their own concrete `code` in the response body. A bare `AppError`
+ * that matches none of the bases defaults to 400.
  */
-const APP_ERROR_STATUS: Record<string, HttpStatus> = {
-  NOT_FOUND: HttpStatus.NOT_FOUND,
-  VALIDATION_ERROR: HttpStatus.BAD_REQUEST,
-  DOMAIN_RULE_VIOLATION: HttpStatus.CONFLICT,
-};
+function statusForAppError(error: AppError): HttpStatus {
+  if (error instanceof NotFoundError) {
+    return HttpStatus.NOT_FOUND;
+  }
+  if (error instanceof ValidationError) {
+    return HttpStatus.BAD_REQUEST;
+  }
+  if (error instanceof ForbiddenError) {
+    return HttpStatus.FORBIDDEN;
+  }
+  if (error instanceof DomainRuleError) {
+    return HttpStatus.CONFLICT;
+  }
+  return HttpStatus.BAD_REQUEST;
+}
 
 /**
  * Global exception filter that renders every failure as the shared
@@ -65,7 +83,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
   } {
     if (exception instanceof AppError) {
       return {
-        status: APP_ERROR_STATUS[exception.code] ?? HttpStatus.BAD_REQUEST,
+        status: statusForAppError(exception),
         code: exception.code,
         message: exception.message,
       };

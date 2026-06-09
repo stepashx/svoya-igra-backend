@@ -4,14 +4,29 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { AppError } from '../../core/errors/app.error';
+import {
+  AppError,
+  DomainRuleError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '../../core/errors/app.error';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { ApiErrorResponse } from './api-error-response';
 
-class NotFoundTestError extends AppError {
-  readonly code = 'NOT_FOUND';
-  constructor(message: string) {
-    super(message);
+/** A feature error that narrows a semantic base to a concrete machine code. */
+class RoomNotFoundError extends NotFoundError {
+  readonly code = 'ROOM_NOT_FOUND';
+  constructor() {
+    super('Room not found.');
+  }
+}
+
+/** A bare AppError that matches none of the semantic bases (→ 400 default). */
+class WeirdError extends AppError {
+  readonly code = 'WEIRD';
+  constructor() {
+    super('Something odd.');
   }
 }
 
@@ -39,13 +54,37 @@ describe('AllExceptionsFilter', () => {
     };
   };
 
-  it('maps a base AppError to its HTTP status and code', () => {
-    const { status, body } = run(new NotFoundTestError('Room not found'));
+  it('maps NotFoundError (and subclasses) to 404, preserving the machine code', () => {
+    const { status, body } = run(new RoomNotFoundError());
     expect(status).toBe(HttpStatus.NOT_FOUND);
-    expect(body.error.code).toBe('NOT_FOUND');
-    expect(body.error.message).toBe('Room not found');
+    expect(body.error.code).toBe('ROOM_NOT_FOUND');
+    expect(body.error.message).toBe('Room not found.');
     expect(body.path).toBe('/api/resource');
     expect(typeof body.timestamp).toBe('string');
+  });
+
+  it('maps ValidationError to 400', () => {
+    const { status, body } = run(new ValidationError('bad input'));
+    expect(status).toBe(HttpStatus.BAD_REQUEST);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('maps ForbiddenError to 403', () => {
+    const { status, body } = run(new ForbiddenError('nope'));
+    expect(status).toBe(HttpStatus.FORBIDDEN);
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('maps DomainRuleError to 409', () => {
+    const { status, body } = run(new DomainRuleError('conflict'));
+    expect(status).toBe(HttpStatus.CONFLICT);
+    expect(body.error.code).toBe('DOMAIN_RULE_VIOLATION');
+  });
+
+  it('maps a bare AppError (no semantic base) to 400', () => {
+    const { status, body } = run(new WeirdError());
+    expect(status).toBe(HttpStatus.BAD_REQUEST);
+    expect(body.error.code).toBe('WEIRD');
   });
 
   it('maps a Nest HttpException', () => {
