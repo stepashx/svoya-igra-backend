@@ -1,4 +1,4 @@
-import { CaptainAlreadyAssignedError } from '../errors';
+import { CaptainAlreadyAssignedError, InvalidScoreError } from '../errors';
 import { Score, TeamName } from '../value-objects';
 
 /** Fields required to create a brand-new team (caller-supplied id). */
@@ -27,7 +27,8 @@ export interface TeamReconstituteProps {
  * A team within a room (plan §12). `captainPlayerId` is the authoritative
  * captain link (assign-once: a second assignment throws). Keeps two scores per
  * §14.7 — `earnedScore` (final result) and `balance` (after purchases) — both as
- * non-negative {@link Score} value objects; scoring arithmetic arrives later.
+ * non-negative {@link Score} value objects; {@link awardPoints} grows BOTH
+ * together on an accepted answer, purchases (balance-only) arrive in Stage 8.
  * `turnOrder` is a flat nullable number (its value object is deferred).
  */
 export class Team {
@@ -105,6 +106,19 @@ export class Team {
 
   assignTurnOrder(turnOrder: number | null): void {
     this._turnOrder = turnOrder;
+  }
+
+  /**
+   * Award §14.7 points for an accepted answer: `earnedScore` AND `balance`
+   * always grow together by the same positive integer amount. Zero or
+   * fractional awards are rejected ({@link InvalidScoreError}).
+   */
+  awardPoints(points: number): void {
+    if (!Number.isInteger(points) || points <= 0) {
+      throw new InvalidScoreError('Awarded points must be a positive integer.');
+    }
+    this._earnedScore = this._earnedScore.add(points);
+    this._balance = this._balance.add(points);
   }
 
   get id(): string {

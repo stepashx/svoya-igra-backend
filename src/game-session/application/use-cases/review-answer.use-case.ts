@@ -17,7 +17,11 @@ import {
   QuestionRepositoryPort,
 } from '../../../gameplay/domain/ports';
 import { Room, Team } from '../../domain/entities';
-import { RoomNotActiveError, RoomNotFoundError } from '../../domain/errors';
+import {
+  RoomNotActiveError,
+  RoomNotFoundError,
+  TeamNotFoundError,
+} from '../../domain/errors';
 import {
   ROOM_REPOSITORY_PORT,
   RoomRepositoryPort,
@@ -60,13 +64,16 @@ export interface ReviewAnswerResult {
  * turn moves to the next team (round-robin by turn order), and the answer timer
  * is cleared.
  *
- * Stage 6 records the review outcome only — it does NOT change any score
- * (`score-changed` is Stage 7). Broadcasts (room-wide): `answer-accepted` /
- * `answer-rejected`, `cell-blocked`, `game-turn-changed` (the shared
- * game-session name) and `board-state-updated`. With `revealAnswer` the correct
- * answer additionally goes to the host's sockets only
- * (`question-correct-answer-shown-to-host` via {@link HostRealtimeEventsPort},
- * 6.2b) — it never enters a room-wide payload (§16.4 secrecy).
+ * On an accepted answer the OPENING team scores (§14.7): `earnedScore` and
+ * `balance` both grow by the cell's points and `score-changed` follows
+ * `answer-accepted` room-wide; a rejected answer changes no score and emits no
+ * `score-changed`. Broadcasts (room-wide): `answer-accepted` /
+ * `answer-rejected` (+ `score-changed` on accept), `cell-blocked`,
+ * `game-turn-changed` (the shared game-session name) and `board-state-updated`.
+ * With `revealAnswer` the correct answer additionally goes to the host's
+ * sockets only (`question-correct-answer-shown-to-host` via
+ * {@link HostRealtimeEventsPort}, 6.2b) — it never enters a room-wide payload
+ * (§16.4 secrecy).
  */
 @Injectable()
 export class ReviewAnswerUseCase {
@@ -122,11 +129,26 @@ export class ReviewAnswerUseCase {
       room.transitionTo('GAME_BOARD');
 
       const roomTeams = await this.teams.findByRoomId(room.id);
+      // §14.7 scoring on accept: the OPENING team (not the current turn
+      // holder) earns the cell's denormalized points on BOTH scores. A missing
+      // opener is an impossible state for an OPENED cell — tripwire.
+      let scoringTeam: Team | null = null;
+      if (input.accepted) {
+        scoringTeam =
+          roomTeams.find((team) => team.id === active.openedByTeamId) ?? null;
+        if (!scoringTeam) {
+          throw new TeamNotFoundError();
+        }
+        scoringTeam.awardPoints(active.points);
+      }
       const nextTeamId = this.moveToNextTurn(room, roomTeams);
       this.timer.clear(room.id);
 
       await this.cells.update(active);
       await this.rooms.update(room);
+      if (scoringTeam) {
+        await this.teams.update(scoringTeam);
+      }
 
       this.realtime.emitToRoom(
         room.id,
@@ -139,6 +161,15 @@ export class ReviewAnswerUseCase {
           teamId: active.openedByTeamId,
         },
       );
+      if (scoringTeam) {
+        this.realtime.emitToRoom(room.id, GameplayEvent.ScoreChanged, {
+          roomId: room.id,
+          teamId: scoringTeam.id,
+          earnedScore: scoringTeam.earnedScore.value,
+          balance: scoringTeam.balance.value,
+          delta: active.points,
+        });
+      }
       // Reveal-gated, host sockets only (6.2b) — never a room-wide payload.
       if (question) {
         this.hostRealtime.emitToHost(

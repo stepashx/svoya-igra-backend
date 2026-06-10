@@ -48,10 +48,12 @@ describe('ReviewAnswerUseCase', () => {
         id: 'cell-1',
         state: 'OPENED',
         openedByTeamId: 'team-1',
+        points: 300,
       }),
     );
     questions.findById.mockResolvedValue(makeQuestion());
-    teams.findByRoomId.mockResolvedValue(participants());
+    const roomTeams = participants();
+    teams.findByRoomId.mockResolvedValue(roomTeams);
     cells.listByRoomId.mockResolvedValue([
       makeBoardCell({ id: 'cell-1', state: 'BLOCKED' }),
     ]);
@@ -67,7 +69,17 @@ describe('ReviewAnswerUseCase', () => {
       makeTransactionPort(),
       timer,
     );
-    return { uc, rooms, cells, questions, realtime, hostRealtime, timer };
+    return {
+      uc,
+      rooms,
+      teams,
+      roomTeams,
+      cells,
+      questions,
+      realtime,
+      hostRealtime,
+      timer,
+    };
   };
 
   it('accepts: blocks the cell to the opener, advances turn, clears timer, emits events', async () => {
@@ -117,6 +129,78 @@ describe('ReviewAnswerUseCase', () => {
     await uc.execute({ roomId: 'room-1', accepted: true });
     const updatedRoom = rooms.update.mock.calls[0][0];
     expect(updatedRoom.currentTeamId).toBe('team-1');
+  });
+
+  describe('scoring (§14.7, Stage 7.1)', () => {
+    it('accepted: awards the cell points to the opening team and persists it', async () => {
+      const { uc, teams } = build('team-1');
+
+      await uc.execute({ roomId: 'room-1', accepted: true });
+
+      expect(teams.update).toHaveBeenCalledTimes(1);
+      const awarded = teams.update.mock.calls[0][0];
+      expect(awarded.id).toBe('team-1');
+      expect(awarded.earnedScore.value).toBe(300);
+      expect(awarded.balance.value).toBe(300);
+    });
+
+    it('accepted: broadcasts score-changed with the post-award scores', async () => {
+      const { uc, realtime } = build('team-1');
+
+      await uc.execute({ roomId: 'room-1', accepted: true });
+
+      expect(realtime.emitToRoom).toHaveBeenCalledWith(
+        'room-1',
+        GameplayEvent.ScoreChanged,
+        {
+          roomId: 'room-1',
+          teamId: 'team-1',
+          earnedScore: 300,
+          balance: 300,
+          delta: 300,
+        },
+      );
+    });
+
+    it('emits score-changed after answer-accepted and before cell-blocked', async () => {
+      const { uc, realtime } = build('team-1');
+
+      await uc.execute({ roomId: 'room-1', accepted: true });
+
+      const emitted = realtime.emitToRoom.mock.calls.map(([, event]) => event);
+      const scoreIndex = emitted.indexOf(GameplayEvent.ScoreChanged);
+      expect(scoreIndex).toBeGreaterThan(
+        emitted.indexOf(GameplayEvent.AnswerAccepted),
+      );
+      expect(scoreIndex).toBeLessThan(
+        emitted.indexOf(GameplayEvent.CellBlocked),
+      );
+    });
+
+    it('awards the OPENING team even when it is not the current team', async () => {
+      const { uc, teams } = build('team-2'); // current: team-2, opener: team-1
+
+      await uc.execute({ roomId: 'room-1', accepted: true });
+
+      const awarded = teams.update.mock.calls[0][0];
+      expect(awarded.id).toBe('team-1');
+      expect(awarded.earnedScore.value).toBe(300);
+      expect(awarded.balance.value).toBe(300);
+    });
+
+    it('rejected: changes no score, persists no team, emits no score-changed', async () => {
+      const { uc, teams, roomTeams, realtime } = build('team-1');
+
+      await uc.execute({ roomId: 'room-1', accepted: false });
+
+      expect(teams.update).not.toHaveBeenCalled();
+      const emitted = realtime.emitToRoom.mock.calls.map(([, event]) => event);
+      expect(emitted).not.toContain(GameplayEvent.ScoreChanged);
+      for (const team of roomTeams) {
+        expect(team.earnedScore.value).toBe(0);
+        expect(team.balance.value).toBe(0);
+      }
+    });
   });
 
   it('rejects reviewing outside ANSWER_REVIEW', async () => {
