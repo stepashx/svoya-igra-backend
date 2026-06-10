@@ -40,7 +40,11 @@ import {
   TeamName,
 } from '../../domain/value-objects';
 import { AnswerTimerRegistry } from '../timers';
-import { BoardInitializationPort, TransactionPort } from '../ports';
+import {
+  BoardInitializationPort,
+  HostRealtimeEventsPort,
+  TransactionPort,
+} from '../ports';
 
 /**
  * Shared in-memory test doubles for the lobby use-case specs. Excluded from the
@@ -97,6 +101,10 @@ export const makeBoardInit = (): jest.Mocked<BoardInitializationPort> => ({
 export const makeRealtime = (): jest.Mocked<RealtimeEventsPort> => ({
   emitToRoom: jest.fn(),
   emitToClient: jest.fn(),
+});
+
+export const makeHostRealtime = (): jest.Mocked<HostRealtimeEventsPort> => ({
+  emitToHost: jest.fn(),
 });
 
 export const makeClock = (now: Date = FIXED_NOW): ClockPort => ({

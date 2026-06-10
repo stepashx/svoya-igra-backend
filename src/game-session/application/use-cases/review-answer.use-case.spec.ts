@@ -1,5 +1,6 @@
 import {
   NoActiveCellError,
+  QuestionNotFoundError,
   UnexpectedGameStageError,
 } from '../../../gameplay/domain/errors';
 import { GameSessionEvent, GameplayEvent } from '../events';
@@ -9,6 +10,9 @@ import {
   makeBoardCell,
   makeBoardCellRepo,
   makeClock,
+  makeHostRealtime,
+  makeQuestion,
+  makeQuestionRepo,
   makeRealtime,
   makeRoom,
   makeRoomRepo,
@@ -28,7 +32,9 @@ describe('ReviewAnswerUseCase', () => {
     const rooms = makeRoomRepo();
     const teams = makeTeamRepo();
     const cells = makeBoardCellRepo();
+    const questions = makeQuestionRepo();
     const realtime = makeRealtime();
+    const hostRealtime = makeHostRealtime();
     const timer = makeTimerRegistry();
     rooms.findById.mockResolvedValue(
       makeRoom({
@@ -44,6 +50,7 @@ describe('ReviewAnswerUseCase', () => {
         openedByTeamId: 'team-1',
       }),
     );
+    questions.findById.mockResolvedValue(makeQuestion());
     teams.findByRoomId.mockResolvedValue(participants());
     cells.listByRoomId.mockResolvedValue([
       makeBoardCell({ id: 'cell-1', state: 'BLOCKED' }),
@@ -53,12 +60,14 @@ describe('ReviewAnswerUseCase', () => {
       rooms,
       teams,
       cells,
+      questions,
       realtime,
+      hostRealtime,
       makeClock(),
       makeTransactionPort(),
       timer,
     );
-    return { uc, rooms, cells, realtime, timer };
+    return { uc, rooms, cells, questions, realtime, hostRealtime, timer };
   };
 
   it('accepts: blocks the cell to the opener, advances turn, clears timer, emits events', async () => {
@@ -126,5 +135,66 @@ describe('ReviewAnswerUseCase', () => {
     await expect(
       uc.execute({ roomId: 'room-1', accepted: true }),
     ).rejects.toBeInstanceOf(NoActiveCellError);
+  });
+
+  describe('revealAnswer (host-only delivery, 6.2b)', () => {
+    it('revealAnswer:true emits the correct answer to the host exactly once', async () => {
+      const { uc, questions, hostRealtime } = build('team-1');
+
+      await uc.execute({
+        roomId: 'room-1',
+        accepted: true,
+        revealAnswer: true,
+      });
+
+      expect(questions.findById).toHaveBeenCalledWith('question-1');
+      expect(hostRealtime.emitToHost).toHaveBeenCalledTimes(1);
+      expect(hostRealtime.emitToHost).toHaveBeenCalledWith(
+        'room-1',
+        GameplayEvent.QuestionCorrectAnswerShownToHost,
+        { roomId: 'room-1', cellId: 'cell-1', correctAnswer: 'Paris' },
+      );
+    });
+
+    it.each([undefined, false])(
+      'revealAnswer %p neither loads the question nor emits to the host',
+      async (revealAnswer) => {
+        const { uc, questions, hostRealtime } = build('team-1');
+
+        await uc.execute({ roomId: 'room-1', accepted: true, revealAnswer });
+
+        expect(questions.findById).not.toHaveBeenCalled();
+        expect(hostRealtime.emitToHost).not.toHaveBeenCalled();
+      },
+    );
+
+    it('aborts on a missing question before any mutation or emission', async () => {
+      const { uc, questions, realtime, hostRealtime } = build('team-1');
+      questions.findById.mockResolvedValue(null);
+
+      await expect(
+        uc.execute({ roomId: 'room-1', accepted: true, revealAnswer: true }),
+      ).rejects.toBeInstanceOf(QuestionNotFoundError);
+
+      // The question loads before the emission block: nothing leaked.
+      expect(realtime.emitToRoom).not.toHaveBeenCalled();
+      expect(hostRealtime.emitToHost).not.toHaveBeenCalled();
+    });
+
+    it('R3: no room-wide payload ever contains the correct answer', async () => {
+      const { uc, realtime } = build('team-1');
+
+      await uc.execute({
+        roomId: 'room-1',
+        accepted: true,
+        revealAnswer: true,
+      });
+
+      expect(realtime.emitToRoom).toHaveBeenCalled();
+      for (const [, , payload] of realtime.emitToRoom.mock.calls) {
+        expect(payload).not.toHaveProperty('correctAnswer');
+        expect(JSON.stringify(payload)).not.toContain('Paris');
+      }
+    });
   });
 });

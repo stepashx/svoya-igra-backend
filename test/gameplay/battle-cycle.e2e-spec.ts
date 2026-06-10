@@ -173,15 +173,16 @@ describe('Battle cycle (e2e)', () => {
     expect(openedPayload.question).toHaveProperty('text');
     expect(openedPayload.question).not.toHaveProperty('correctAnswer');
 
-    // Recorder: the §16.4 sequence fired in order.
+    // Recorder: the §16.4 room-wide sequence fired in order. The recorder sees
+    // emitToRoom only — cell-selection-requested is host-socket-only since
+    // 6.2b and must never appear here (see host-delivery.e2e-spec for its
+    // positive path).
     const names = events.map((e) => e.event);
     const at = (name: string): number => names.indexOf(name);
+    expect(names).not.toContain('server:gameplay:cell-selection-requested');
     expect(
-      at('server:gameplay:cell-selection-requested'),
+      at('server:gameplay:cell-selection-approved'),
     ).toBeGreaterThanOrEqual(0);
-    expect(at('server:gameplay:cell-selection-approved')).toBeGreaterThan(
-      at('server:gameplay:cell-selection-requested'),
-    );
     expect(at('server:gameplay:question-opened')).toBeGreaterThan(
       at('server:gameplay:cell-selection-approved'),
     );

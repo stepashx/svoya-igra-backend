@@ -1,8 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  REALTIME_EVENTS_PORT,
-  RealtimeEventsPort,
-} from '../../../core/ports/realtime-events.port';
 import { BoardCell } from '../../../gameplay/domain/entities';
 import {
   BoardCellNotFoundError,
@@ -21,7 +17,12 @@ import {
   TEAM_REPOSITORY_PORT,
   TeamRepositoryPort,
 } from '../../domain/ports';
-import { TRANSACTION_PORT, TransactionPort } from '../ports';
+import {
+  HOST_REALTIME_EVENTS_PORT,
+  HostRealtimeEventsPort,
+  TRANSACTION_PORT,
+  TransactionPort,
+} from '../ports';
 import { GameplayEvent, boardCellSummary } from '../events';
 
 export interface SelectQuestionInput {
@@ -36,8 +37,9 @@ export interface SelectQuestionInput {
  * room's current team. Enforces the "one active cell per room" invariant under
  * the per-room lock (the table has no unique index — §19): if any cell is
  * already SELECTED/OPENED the pick is rejected. The chosen cell goes
- * AVAILABLE → SELECTED and a `cell-selection-requested` broadcast prompts the
- * host (room-wide in 6.2a; host-only narrowing is 6.2b).
+ * AVAILABLE → SELECTED and `cell-selection-requested` prompts the host —
+ * delivered host-only through the {@link HostRealtimeEventsPort} (6.2b), never
+ * room-wide.
  */
 @Injectable()
 export class SelectQuestionUseCase {
@@ -46,8 +48,8 @@ export class SelectQuestionUseCase {
     @Inject(TEAM_REPOSITORY_PORT) private readonly teams: TeamRepositoryPort,
     @Inject(BOARD_CELL_REPOSITORY_PORT)
     private readonly cells: BoardCellRepositoryPort,
-    @Inject(REALTIME_EVENTS_PORT)
-    private readonly realtime: RealtimeEventsPort,
+    @Inject(HOST_REALTIME_EVENTS_PORT)
+    private readonly hostRealtime: HostRealtimeEventsPort,
     @Inject(TRANSACTION_PORT) private readonly tx: TransactionPort,
   ) {}
 
@@ -86,10 +88,14 @@ export class SelectQuestionUseCase {
       cell.select(); // AVAILABLE → SELECTED (CellNotAvailableError otherwise)
       await this.cells.update(cell);
 
-      this.realtime.emitToRoom(room.id, GameplayEvent.CellSelectionRequested, {
-        roomId: room.id,
-        cell: boardCellSummary(cell),
-      });
+      this.hostRealtime.emitToHost(
+        room.id,
+        GameplayEvent.CellSelectionRequested,
+        {
+          roomId: room.id,
+          cell: boardCellSummary(cell),
+        },
+      );
 
       return cell;
     });

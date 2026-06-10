@@ -10,7 +10,7 @@ import { SelectQuestionUseCase } from './select-question.use-case';
 import {
   makeBoardCell,
   makeBoardCellRepo,
-  makeRealtime,
+  makeHostRealtime,
   makeRoom,
   makeRoomRepo,
   makeTeam,
@@ -23,7 +23,7 @@ describe('SelectQuestionUseCase', () => {
     const rooms = makeRoomRepo();
     const teams = makeTeamRepo();
     const cells = makeBoardCellRepo();
-    const realtime = makeRealtime();
+    const hostRealtime = makeHostRealtime();
     rooms.findById.mockResolvedValue(
       makeRoom({ currentStage: 'GAME_BOARD', currentTeamId: 'team-1' }),
     );
@@ -38,10 +38,10 @@ describe('SelectQuestionUseCase', () => {
       rooms,
       teams,
       cells,
-      realtime,
+      hostRealtime,
       makeTransactionPort(),
     );
-    return { uc, rooms, teams, cells, realtime };
+    return { uc, rooms, teams, cells, hostRealtime };
   };
 
   const input = {
@@ -50,15 +50,18 @@ describe('SelectQuestionUseCase', () => {
     cellId: 'cell-1',
   };
 
-  it('selects an available cell and broadcasts cell-selection-requested', async () => {
-    const { uc, cells, realtime } = build();
+  it('selects an available cell and emits cell-selection-requested to the host only', async () => {
+    const { uc, cells, hostRealtime } = build();
     const cell = await uc.execute(input);
     expect(cell.state).toBe('SELECTED');
     expect(cells.update).toHaveBeenCalledWith(cell);
-    expect(realtime.emitToRoom).toHaveBeenCalledWith(
+    expect(hostRealtime.emitToHost).toHaveBeenCalledWith(
       'room-1',
       GameplayEvent.CellSelectionRequested,
-      expect.objectContaining({ roomId: 'room-1' }),
+      expect.objectContaining({
+        roomId: 'room-1',
+        cell: expect.objectContaining({ id: 'cell-1', state: 'SELECTED' }),
+      }),
     );
   });
 

@@ -405,5 +405,33 @@ out of scope and deferred.
   (§14.1) — the room must outlive a host reload.
 - **No token TTL.** An expired token is simply "not found" and takes the same
   invalid-token path; TTL enforcement is post-MVP.
-- **`game:canStartChanged` stays room-wide.** Narrowing it to a host audience
-  needs `emitToHost` + a reverse host-socket lookup and is deferred.
+- **`game:canStartChanged` stays room-wide.** The host-socket mechanism now
+  exists (`HostRealtimeEventsPort.emitToHost`, Stage 6.2b below), but narrowing
+  this lobby event to the host audience remains deferred.
+
+## Stage 6.2b — host-socket delivery
+
+Sub-stage 6.2b implements the **host audience** for the two §16.4 host rows:
+`cell-selection-requested` (now host-only, no longer room-wide) and
+`question-correct-answer-shown-to-host` (new emission). The battle use cases
+publish them through a dedicated application port,
+`HostRealtimeEventsPort.emitToHost(roomId, event, payload)`
+(`src/game-session/application/ports/`); the core `RealtimeEventsPort` is
+untouched.
+
+- **Mechanism: presence reverse-lookup, not a transport group.** The
+  `PresenceHostRealtimeEventsAdapter` (`presentation/ws/`) resolves the host's
+  live sockets via the 5.2b presence registry (`h:<roomId>` identity, every
+  open host tab) and emits to each with `emitToClient`. A Socket.IO "host
+  group" was deliberately rejected: the base gateway's public
+  `client:realtime:join-room` would let any socket join it and read host
+  secrets.
+- **Reveal gating.** `question-correct-answer-shown-to-host`
+  (`{ roomId, cellId, correctAnswer }`) is emitted by ReviewAnswer **only when
+  the request carries `revealAnswer: true`**. It is an addition to REST —
+  `current/host` / `current/answer` (HostAuthGuard) remain the source of
+  truth; the room-wide payloads still never contain `correctAnswer`.
+- **No-op without host sockets.** With no live host socket the emission simply
+  addresses nobody; the REST mutation succeeds unchanged.
+- **Single-node.** Presence is in-memory per process (see _Presence model_
+  above), so host delivery shares the same single-node MVP scope.

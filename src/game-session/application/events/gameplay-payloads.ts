@@ -40,7 +40,8 @@ export function boardCellSummary(cell: BoardCell): BoardCellEventSummary {
 /**
  * Room-facing question projection. DELIBERATELY omits `correctAnswer` — the
  * room broadcast (`question-opened`) never carries the answer (Этап2 §8 / §16.4
- * secrecy). The host obtains the answer only over REST in 6.2a.
+ * secrecy). The host obtains the answer over REST and, since 6.2b, over the
+ * host-socket-only `question-correct-answer-shown-to-host` event.
  */
 export function roomQuestionSummary(
   question: Question,

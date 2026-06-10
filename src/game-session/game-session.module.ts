@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 import { GameplayModule } from '../gameplay/gameplay.module';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
 import { RealtimeModule } from '../realtime/realtime.module';
-import { TRANSACTION_PORT } from './application/ports';
+import {
+  HOST_REALTIME_EVENTS_PORT,
+  TRANSACTION_PORT,
+} from './application/ports';
 import {
   LobbyQueryService,
   RoomSnapshotAssembler,
@@ -55,6 +58,7 @@ import { HostAuthGuard, PlayerIdentityGuard } from './presentation/http';
 import {
   GameSessionGateway,
   LobbyPresenceRegistry,
+  PresenceHostRealtimeEventsAdapter,
   SocketIdentityResolver,
 } from './presentation/ws';
 
@@ -83,6 +87,13 @@ import {
  * the RealtimeEventsPort; the answer timer is the in-memory
  * {@link AnswerTimerRegistry}. The board/question read models and the three
  * repository ports they use are consumed from the imported {@link GameplayModule}.
+ *
+ * Sub-stage 6.2b adds host-socket delivery: the
+ * {@link PresenceHostRealtimeEventsAdapter} implements the application-level
+ * HOST_REALTIME_EVENTS_PORT over the module-singleton
+ * {@link LobbyPresenceRegistry} (shared with the gateway), so
+ * `cell-selection-requested` and the reveal-gated
+ * `question-correct-answer-shown-to-host` reach only the host's live sockets.
  */
 @Module({
   imports: [InfrastructureModule, RealtimeModule, GameplayModule],
@@ -138,6 +149,13 @@ import {
     GameSessionGateway,
     LobbyPresenceRegistry,
     SocketIdentityResolver,
+    // Host-socket delivery (6.2b): presence reverse-lookup behind the
+    // application-level host-events port.
+    PresenceHostRealtimeEventsAdapter,
+    {
+      provide: HOST_REALTIME_EVENTS_PORT,
+      useExisting: PresenceHostRealtimeEventsAdapter,
+    },
   ],
 })
 export class GameSessionModule {}

@@ -4,14 +4,17 @@ import {
   REALTIME_EVENTS_PORT,
   RealtimeEventsPort,
 } from '../../../core/ports/realtime-events.port';
-import { BoardCell } from '../../../gameplay/domain/entities';
+import { BoardCell, Question } from '../../../gameplay/domain/entities';
 import {
   NoActiveCellError,
+  QuestionNotFoundError,
   UnexpectedGameStageError,
 } from '../../../gameplay/domain/errors';
 import {
   BOARD_CELL_REPOSITORY_PORT,
   BoardCellRepositoryPort,
+  QUESTION_REPOSITORY_PORT,
+  QuestionRepositoryPort,
 } from '../../../gameplay/domain/ports';
 import { Room, Team } from '../../domain/entities';
 import { RoomNotActiveError, RoomNotFoundError } from '../../domain/errors';
@@ -22,16 +25,22 @@ import {
   TeamRepositoryPort,
 } from '../../domain/ports';
 import { AnswerTimerRegistry } from '../timers';
-import { TRANSACTION_PORT, TransactionPort } from '../ports';
+import {
+  HOST_REALTIME_EVENTS_PORT,
+  HostRealtimeEventsPort,
+  TRANSACTION_PORT,
+  TransactionPort,
+} from '../ports';
 import { GameSessionEvent, GameplayEvent, boardCellSummary } from '../events';
 
 export interface ReviewAnswerInput {
   roomId: string;
   accepted: boolean;
   /**
-   * Whether to reveal the correct answer to the host (plan §14.6 optional). In
-   * 6.2a this flag is accepted but drives no WS emission (the host obtains the
-   * answer over REST); host-socket delivery is 6.2b.
+   * Whether to reveal the correct answer to the host (plan §14.6 optional).
+   * When `true` the loaded answer is additionally emitted host-only as
+   * `question-correct-answer-shown-to-host` (6.2b); REST (`current/host`,
+   * `current/answer`) stays the source of truth.
    */
   revealAnswer?: boolean;
 }
@@ -54,7 +63,10 @@ export interface ReviewAnswerResult {
  * Stage 6 records the review outcome only — it does NOT change any score
  * (`score-changed` is Stage 7). Broadcasts (room-wide): `answer-accepted` /
  * `answer-rejected`, `cell-blocked`, `game-turn-changed` (the shared
- * game-session name) and `board-state-updated`.
+ * game-session name) and `board-state-updated`. With `revealAnswer` the correct
+ * answer additionally goes to the host's sockets only
+ * (`question-correct-answer-shown-to-host` via {@link HostRealtimeEventsPort},
+ * 6.2b) — it never enters a room-wide payload (§16.4 secrecy).
  */
 @Injectable()
 export class ReviewAnswerUseCase {
@@ -63,8 +75,12 @@ export class ReviewAnswerUseCase {
     @Inject(TEAM_REPOSITORY_PORT) private readonly teams: TeamRepositoryPort,
     @Inject(BOARD_CELL_REPOSITORY_PORT)
     private readonly cells: BoardCellRepositoryPort,
+    @Inject(QUESTION_REPOSITORY_PORT)
+    private readonly questions: QuestionRepositoryPort,
     @Inject(REALTIME_EVENTS_PORT)
     private readonly realtime: RealtimeEventsPort,
+    @Inject(HOST_REALTIME_EVENTS_PORT)
+    private readonly hostRealtime: HostRealtimeEventsPort,
     @Inject(CLOCK_PORT) private readonly clock: ClockPort,
     @Inject(TRANSACTION_PORT) private readonly tx: TransactionPort,
     private readonly timer: AnswerTimerRegistry,
@@ -90,6 +106,16 @@ export class ReviewAnswerUseCase {
         throw new NoActiveCellError();
       }
 
+      // §14.6 optional reveal: load the correct answer BEFORE any mutation or
+      // emission so a missing question aborts the review with no side effects.
+      let question: Question | null = null;
+      if (input.revealAnswer === true) {
+        question = await this.questions.findById(active.questionId);
+        if (!question) {
+          throw new QuestionNotFoundError();
+        }
+      }
+
       const answeredByTeamId = input.accepted ? active.openedByTeamId : null;
       active.block(this.clock.now(), answeredByTeamId); // OPENED → BLOCKED
       room.incrementBlockedQuestions();
@@ -113,6 +139,18 @@ export class ReviewAnswerUseCase {
           teamId: active.openedByTeamId,
         },
       );
+      // Reveal-gated, host sockets only (6.2b) — never a room-wide payload.
+      if (question) {
+        this.hostRealtime.emitToHost(
+          room.id,
+          GameplayEvent.QuestionCorrectAnswerShownToHost,
+          {
+            roomId: room.id,
+            cellId: active.id,
+            correctAnswer: question.correctAnswer,
+          },
+        );
+      }
       this.realtime.emitToRoom(room.id, GameplayEvent.CellBlocked, {
         roomId: room.id,
         cellId: active.id,

@@ -12,8 +12,9 @@ export class ReviewAnswerRequestDto {
 
   @ApiPropertyOptional({
     description:
-      'Reveal the correct answer to the host (plan §14.6). Accepted in 6.2a ' +
-      'but drives no extra delivery — the host reads the answer over REST.',
+      'Reveal the correct answer to the host (plan §14.6). When true, the ' +
+      'review additionally emits the host-only WS event ' +
+      '`question-correct-answer-shown-to-host`; REST stays the source of truth.',
   })
   @IsOptional()
   @IsBoolean()

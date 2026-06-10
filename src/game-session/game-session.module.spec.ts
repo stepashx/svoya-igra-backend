@@ -20,6 +20,7 @@ import { DatabaseService } from '../infrastructure/database/database.service';
 import { TransactionContext } from '../infrastructure/database/transaction-context';
 import {
   BOARD_INITIALIZATION_PORT,
+  HOST_REALTIME_EVENTS_PORT,
   TRANSACTION_PORT,
 } from './application/ports';
 import {
@@ -83,6 +84,7 @@ import { HostAuthGuard, PlayerIdentityGuard } from './presentation/http';
 import {
   GameSessionGateway,
   LobbyPresenceRegistry,
+  PresenceHostRealtimeEventsAdapter,
   SocketIdentityResolver,
 } from './presentation/ws';
 
@@ -169,6 +171,12 @@ describe('GameSessionModule wiring', () => {
         GameSessionGateway,
         LobbyPresenceRegistry,
         SocketIdentityResolver,
+        // Host-socket delivery (6.2b), mirroring the module binding.
+        PresenceHostRealtimeEventsAdapter,
+        {
+          provide: HOST_REALTIME_EVENTS_PORT,
+          useExisting: PresenceHostRealtimeEventsAdapter,
+        },
       ],
     }).compile();
 
@@ -223,6 +231,15 @@ describe('GameSessionModule wiring', () => {
     expect(moduleRef.get(MarkClientDisconnectedUseCase)).toBeInstanceOf(
       MarkClientDisconnectedUseCase,
     );
+    await moduleRef.close();
+  });
+
+  it('resolves the host-events port to the presence adapter (6.2b)', async () => {
+    const moduleRef = await buildModule();
+    const adapter = moduleRef.get(PresenceHostRealtimeEventsAdapter);
+    expect(adapter).toBeInstanceOf(PresenceHostRealtimeEventsAdapter);
+    // useExisting: the port token resolves to the SAME instance as the class.
+    expect(moduleRef.get(HOST_REALTIME_EVENTS_PORT)).toBe(adapter);
     await moduleRef.close();
   });
 
