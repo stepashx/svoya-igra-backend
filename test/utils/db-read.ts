@@ -26,6 +26,17 @@ export async function readPlayerConnectionStatus(
   return result.rows[0]?.connection_status ?? null;
 }
 
+/** A team's persisted scores (§14.7), or `null` if the row is gone. */
+export async function readTeamScores(
+  teamId: string,
+): Promise<{ earned_score: number; balance: number } | null> {
+  const result = await getPool().query<{
+    earned_score: number;
+    balance: number;
+  }>('SELECT earned_score, balance FROM teams WHERE id = $1', [teamId]);
+  return result.rows[0] ?? null;
+}
+
 /** A persisted board cell, narrowed to the fields the board-init e2e asserts. */
 export interface BoardCellRow {
   room_id: string;

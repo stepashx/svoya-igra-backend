@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { AppConfigService } from '../../src/config/app-config.service';
 import { AnswerTimerRegistry } from '../../src/game-session/application/timers';
 import { CapturedEvent, createE2EApp } from '../utils/create-e2e-app';
+import { closeDbReadPool, readTeamScores } from '../utils/db-read';
 import { closeTruncatePool, truncateLobby } from '../utils/db-truncate';
 import {
   createRoom,
@@ -54,6 +55,7 @@ describe('Battle cycle (e2e)', () => {
   afterAll(async () => {
     await app.close();
     await closeTruncatePool();
+    await closeDbReadPool();
   });
 
   beforeEach(async () => {
@@ -82,8 +84,15 @@ describe('Battle cycle (e2e)', () => {
     const activeCaptainToken = tokenByTeam[activeTeamId];
     const otherCaptainToken =
       activeTeamId === reds.id ? bob.token : alice.token;
+    const otherTeamId = activeTeamId === reds.id ? blues.id : reds.id;
 
-    return { room, activeTeamId, activeCaptainToken, otherCaptainToken };
+    return {
+      room,
+      activeTeamId,
+      otherTeamId,
+      activeCaptainToken,
+      otherCaptainToken,
+    };
   };
 
   /** Fetch the board and return the first cell's id. */
@@ -94,7 +103,8 @@ describe('Battle cycle (e2e)', () => {
   };
 
   it('plays a full accepted round and broadcasts the §16.4 events in order', async () => {
-    const { room, activeTeamId, activeCaptainToken } = await startBattle();
+    const { room, activeTeamId, otherTeamId, activeCaptainToken } =
+      await startBattle();
     events.length = 0; // focus on battle events only
 
     const board = await getBoard(app, room.code);
@@ -106,6 +116,7 @@ describe('Battle cycle (e2e)', () => {
       ),
     ).toBe(true);
     const cellId = board.body.cells[0].id;
+    const expectedDelta = board.body.cells[0].points;
 
     // Captain of the active team selects a cell.
     const selected = await selectCell(
@@ -162,6 +173,29 @@ describe('Battle cycle (e2e)', () => {
     expect(state.body.room.blockedQuestionsCount).toBe(1);
     expect(state.body.room.currentTeamId).not.toBe(activeTeamId);
 
+    // §14.7 scoring persisted: the opener's BOTH scores grew by the cell's
+    // points; the other team is untouched.
+    expect(await readTeamScores(activeTeamId)).toEqual({
+      earned_score: expectedDelta,
+      balance: expectedDelta,
+    });
+    expect(await readTeamScores(otherTeamId)).toEqual({
+      earned_score: 0,
+      balance: 0,
+    });
+
+    // Recorder: score-changed carried the opener's post-award scores.
+    const scoreChanged = events.find(
+      (e) => e.event === 'server:gameplay:score-changed',
+    );
+    expect(scoreChanged).toBeDefined();
+    expect(scoreChanged?.payload).toMatchObject({
+      teamId: activeTeamId,
+      earnedScore: expectedDelta,
+      balance: expectedDelta,
+      delta: expectedDelta,
+    });
+
     // Recorder: question-opened never carried the correct answer.
     const openedEvent = events.find(
       (e) => e.event === 'server:gameplay:question-opened',
@@ -195,8 +229,11 @@ describe('Battle cycle (e2e)', () => {
     expect(at('server:gameplay:answer-accepted')).toBeGreaterThan(
       at('server:gameplay:answer-submitted'),
     );
-    expect(at('server:gameplay:cell-blocked')).toBeGreaterThan(
+    expect(at('server:gameplay:score-changed')).toBeGreaterThan(
       at('server:gameplay:answer-accepted'),
+    );
+    expect(at('server:gameplay:cell-blocked')).toBeGreaterThan(
+      at('server:gameplay:score-changed'),
     );
     expect(at('server:game-session:game-turn-changed')).toBeGreaterThan(
       at('server:gameplay:answer-accepted'),
@@ -204,13 +241,12 @@ describe('Battle cycle (e2e)', () => {
     expect(at('server:gameplay:board-state-updated')).toBeGreaterThan(
       at('server:gameplay:cell-blocked'),
     );
-    // Superseded / deferred events are never emitted in Stage 6.
-    expect(names).not.toContain('server:gameplay:score-changed');
+    // The superseded name is never emitted.
     expect(names).not.toContain('server:gameplay:cell-selected');
   });
 
-  it('blocks the cell on a rejected answer with no answerer', async () => {
-    const { room, activeCaptainToken } = await startBattle();
+  it('blocks the cell on a rejected answer with no answerer and no scoring', async () => {
+    const { room, activeTeamId, activeCaptainToken } = await startBattle();
     const cellId = await firstCellId(room.code);
     await selectCell(app, room.code, activeCaptainToken, cellId);
     await openQuestion(app, room.code, room.hostToken, cellId);
@@ -223,6 +259,15 @@ describe('Battle cycle (e2e)', () => {
     );
     expect(blocked.state).toBe('BLOCKED');
     expect(blocked.answeredByTeamId).toBeNull();
+
+    // A rejected review changes no score and emits no score-changed.
+    expect(await readTeamScores(activeTeamId)).toEqual({
+      earned_score: 0,
+      balance: 0,
+    });
+    expect(events.map((e) => e.event)).not.toContain(
+      'server:gameplay:score-changed',
+    );
   });
 
   describe('answer secrecy', () => {

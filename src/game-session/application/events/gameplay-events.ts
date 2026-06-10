@@ -6,9 +6,8 @@
  * here — next to the use cases that emit them — so the application layer stays
  * free of any transport import, exactly as {@link GameSessionEvent}.
  *
- * Stage 6 deliberately emits only this subset of the §16.4 catalog:
+ * Two §16.4 names are deliberately absent:
  * - `cell-selected` is SUPERSEDED by `cell-selection-requested` and never sent.
- * - `score-changed` is reserved for Stage 7 (scoring) and never sent in Stage 6.
  * - `game-turn-changed` keeps its game-session name ({@link GameSessionEvent}) —
  *   it is shared by §16.3/§16.4 and not duplicated here.
  *
@@ -28,6 +27,7 @@ export const GameplayEvent = {
   AnswerSubmitted: 'server:gameplay:answer-submitted',
   AnswerAccepted: 'server:gameplay:answer-accepted',
   AnswerRejected: 'server:gameplay:answer-rejected',
+  ScoreChanged: 'server:gameplay:score-changed',
   QuestionCorrectAnswerShownToHost:
     'server:gameplay:question-correct-answer-shown-to-host',
   CellBlocked: 'server:gameplay:cell-blocked',

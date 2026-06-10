@@ -183,7 +183,7 @@ notes_ below for the secrecy and timer constraints fixed now.
 | `server:gameplay:answer-rejected` | server | gameplay | room | Host rejected the answer — review outcome, NOT scoring | §16.4 | Stage 6.2 (ReviewAnswer) |
 | `server:gameplay:question-correct-answer-shown-to-host` | server | gameplay | host | Correct answer shown ONLY to host after the team answered | §16.4 | Stage 6.2 (ReviewAnswer) — HOST-ONLY, never to players (Этап2 §8) |
 | `server:gameplay:cell-blocked` | server | gameplay | room | Cell blocked (on both correct and incorrect answers) | §16.4 | Stage 6.2 (ReviewAnswer) |
-| `server:gameplay:score-changed` | server | gameplay | room | Team score changed | §16.4 | Reserved — Stage 7 (Scoring); NOT emitted in Stage 6 |
+| `server:gameplay:score-changed` | server | gameplay | room | Team score changed | §16.4 | Stage 7.1 (ReviewAnswer) — emitted on accepted review only; payload `{ roomId, teamId, earnedScore, balance, delta }` |
 | `server:game-session:game-turn-changed` | server | game-session | room | Active team changed | §16.4 → see game-session | Shared §16.3/§16.4 — not duplicated in gameplay (emitted by StartGame in 5.2a and by MoveToNextTurn in 6.2) |
 
 ### Gameplay — client commands (§16.4)
@@ -200,7 +200,7 @@ notes_ below.
 | `client:gameplay:approve-selection` | client | gameplay | Host approves (OpenQuestion) | `cell-selection-approved`, `question-opened`, `question-timer-started` | host |
 | `client:gameplay:reject-selection` | client | gameplay | Host rejects the pick | `cell-selection-rejected` | host |
 | `client:gameplay:submit-answer` | client | gameplay | Team submits an answer (SubmitAnswer) | `answer-submitted` | captain/team |
-| `client:gameplay:review-answer` | client | gameplay | Host accepts/rejects (ReviewAnswer) | `answer-accepted` \| `answer-rejected`, `cell-blocked`, `game-turn-changed` (+ Stage 7: `score-changed`) | host |
+| `client:gameplay:review-answer` | client | gameplay | Host accepts/rejects (ReviewAnswer) | `answer-accepted` \| `answer-rejected`, `score-changed` (on accept), `cell-blocked`, `game-turn-changed` | host |
 | `client:gameplay:reveal-correct-answer` | client | gameplay | Host requests the correct answer (§14.6 optional) | `question-correct-answer-shown-to-host` | host |
 
 ### Plan name → canonical name (§16.4)
@@ -226,7 +226,7 @@ keeps its existing `game-session` name — shared by §16.3/§16.4, not a second
 | `answer:rejected` | `server:gameplay:answer-rejected` |
 | `question:correctAnswerShownToHost` | `server:gameplay:question-correct-answer-shown-to-host` |
 | `cell:blocked` | `server:gameplay:cell-blocked` |
-| `score:changed` | `server:gameplay:score-changed` (reserved — Stage 7, not emitted in Stage 6) |
+| `score:changed` | `server:gameplay:score-changed` |
 | `game:turnChanged` | `server:game-session:game-turn-changed` (see game-session; shared §16.3/§16.4 — not a second name) |
 
 ### Gameplay contract notes (§16.4)
