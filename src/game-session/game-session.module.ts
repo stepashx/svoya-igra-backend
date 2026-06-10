@@ -6,8 +6,11 @@ import { TRANSACTION_PORT } from './application/ports';
 import {
   LobbyQueryService,
   RoomSnapshotAssembler,
+  TimerQueryService,
 } from './application/queries';
+import { AnswerTimerRegistry } from './application/timers';
 import {
+  AdvanceOnTimeoutUseCase,
   CloseRoomUseCase,
   CreateRoomUseCase,
   CreateTeamUseCase,
@@ -16,9 +19,14 @@ import {
   LeaveTeamUseCase,
   MarkClientDisconnectedUseCase,
   MarkTeamReadyUseCase,
+  OpenQuestionUseCase,
   ReconnectClientUseCase,
+  RejectSelectionUseCase,
+  ReviewAnswerUseCase,
+  SelectQuestionUseCase,
   SelectTopicUseCase,
   StartGameUseCase,
+  SubmitAnswerUseCase,
   UpdateProfileUseCase,
 } from './application/use-cases';
 import {
@@ -35,8 +43,10 @@ import {
   DrizzleTransactionAdapter,
 } from './infrastructure/persistence';
 import {
+  BoardController,
   GameController,
   PlayersController,
+  QuestionsController,
   RoomsController,
   TeamsController,
   TopicsController,
@@ -66,6 +76,13 @@ import {
  * Sub-stage 6.1 imports {@link GameplayModule} for the board-init seam: it
  * exports the BOARD_INITIALIZATION_PORT that StartGame invokes after the room
  * reaches GAME_BOARD.
+ *
+ * Sub-stage 6.2a adds the battle cycle (Design A — Game Flow owns the stages and
+ * turn). The Board/Questions controllers and the select/open/reject/submit/
+ * review/advance use cases live here and emit `server:gameplay:*` events through
+ * the RealtimeEventsPort; the answer timer is the in-memory
+ * {@link AnswerTimerRegistry}. The board/question read models and the three
+ * repository ports they use are consumed from the imported {@link GameplayModule}.
  */
 @Module({
   imports: [InfrastructureModule, RealtimeModule, GameplayModule],
@@ -75,6 +92,9 @@ import {
     TeamsController,
     TopicsController,
     GameController,
+    // Battle-cycle controllers (sub-stage 6.2a; Gameplay tag).
+    BoardController,
+    QuestionsController,
   ],
   providers: [
     // Persistence ports → Drizzle adapters.
@@ -96,9 +116,20 @@ import {
     StartGameUseCase,
     CloseRoomUseCase,
     MarkClientDisconnectedUseCase,
+    // Battle-cycle use cases + answer timer (sub-stage 6.2a). The gameplay
+    // repository ports and BoardQueryService come from the imported
+    // GameplayModule (Design A).
+    AnswerTimerRegistry,
+    SelectQuestionUseCase,
+    OpenQuestionUseCase,
+    RejectSelectionUseCase,
+    SubmitAnswerUseCase,
+    ReviewAnswerUseCase,
+    AdvanceOnTimeoutUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,
+    TimerQueryService,
     // Route guards.
     HostAuthGuard,
     PlayerIdentityGuard,

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { DbExecutor } from '../../../infrastructure/database/database.types';
 import { TransactionContext } from '../../../infrastructure/database/transaction-context';
@@ -69,6 +69,21 @@ export class DrizzleBoardCellRepository implements BoardCellRepositoryPort {
           eq(boardCells.roomId, roomId),
           eq(boardCells.categoryId, categoryId),
           eq(boardCells.position, position),
+        ),
+      )
+      .limit(1);
+    return row ? mapRowToBoardCell(row) : null;
+  }
+
+  /** The room's active cell (SELECTED or OPENED), or null when none is active. */
+  async findActiveByRoomId(roomId: string): Promise<BoardCell | null> {
+    const [row] = await this.executor()
+      .select()
+      .from(boardCells)
+      .where(
+        and(
+          eq(boardCells.roomId, roomId),
+          inArray(boardCells.state, ['SELECTED', 'OPENED']),
         ),
       )
       .limit(1);

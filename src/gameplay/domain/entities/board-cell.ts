@@ -100,6 +100,18 @@ export class BoardCell {
     this._state = 'SELECTED';
   }
 
+  /**
+   * Host rejects the pick: SELECTED → AVAILABLE, returning the cell to the
+   * board so the captain can choose again. Only a SELECTED cell can be
+   * deselected — rejecting anything else is an illegal transition.
+   */
+  deselect(): void {
+    if (this._state !== 'SELECTED') {
+      throw new InvalidBoardCellTransitionError(this._state, 'AVAILABLE');
+    }
+    this._state = 'AVAILABLE';
+  }
+
   /** Reveal the question: SELECTED → OPENED, recording who opened it. */
   open(openedByTeamId: string): void {
     if (this._state !== 'SELECTED') {

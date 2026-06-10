@@ -140,6 +140,35 @@ describe('Room', () => {
     );
   });
 
+  it('increments the blocked-questions count after an answer review', () => {
+    const room = makeRoomAt('ANSWER_REVIEW');
+    expect(room.blockedQuestionsCount).toBe(0);
+    room.incrementBlockedQuestions();
+    room.incrementBlockedQuestions();
+    expect(room.blockedQuestionsCount).toBe(2);
+  });
+
+  it('rejects incrementing the blocked count past the board size', () => {
+    const room = Room.reconstitute({
+      id: 'room-1',
+      code: RoomCode.create('ABCDE'),
+      status: 'ACTIVE',
+      currentStage: 'GAME_BOARD',
+      hostId: 'host-1',
+      hostReconnectToken: ReconnectToken.create('host-token'),
+      currentTeamId: null,
+      totalQuestionsCount: 30,
+      blockedQuestionsCount: 30,
+      currentShopRound: 0,
+      createdAt: now,
+      finishedAt: null,
+    });
+    expect(() => room.incrementBlockedQuestions()).toThrow(
+      InvalidQuestionCountsError,
+    );
+    expect(room.blockedQuestionsCount).toBe(30);
+  });
+
   it('enforces blockedQuestionsCount <= totalQuestionsCount', () => {
     expect(() =>
       Room.reconstitute({

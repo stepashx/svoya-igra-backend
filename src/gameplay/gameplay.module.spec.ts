@@ -3,6 +3,7 @@ import { BOARD_INITIALIZATION_PORT } from '../game-session/application/ports';
 import { ID_GENERATOR_PORT } from '../core/ports/id-generator.port';
 import { DatabaseService } from '../infrastructure/database/database.service';
 import { TransactionContext } from '../infrastructure/database/transaction-context';
+import { BoardQueryService } from './application/queries';
 import { InitializeBoardUseCase } from './application/use-cases';
 import {
   BOARD_CELL_REPOSITORY_PORT,
@@ -14,16 +15,17 @@ import {
   DrizzleCategoryRepository,
   DrizzleQuestionRepository,
 } from './infrastructure/persistence';
-import {
-  BoardController,
-  QuestionsController,
-} from './presentation/controllers';
 
 /**
  * Verifies the DI wiring of GameplayModule without the real
  * InfrastructureModule (no PostgreSQL pool). The bindings mirror the module;
  * boundary dependencies (DatabaseService, TransactionContext, ID_GENERATOR_PORT)
  * are stubbed, as in the game-session module spec.
+ *
+ * Sub-stage 6.2a: the 501 Board/Questions controllers are retired (the battle
+ * controllers live in game-session now), and the module gains the
+ * {@link BoardQueryService} read model plus exports of the three repository
+ * ports consumed by the game-session battle use cases.
  */
 describe('GameplayModule wiring', () => {
   const databaseStub = {
@@ -33,7 +35,6 @@ describe('GameplayModule wiring', () => {
 
   const buildModule = (): Promise<TestingModule> =>
     Test.createTestingModule({
-      controllers: [BoardController, QuestionsController],
       providers: [
         { provide: DatabaseService, useValue: databaseStub },
         TransactionContext,
@@ -55,6 +56,7 @@ describe('GameplayModule wiring', () => {
           provide: BOARD_INITIALIZATION_PORT,
           useExisting: InitializeBoardUseCase,
         },
+        BoardQueryService,
       ],
     }).compile();
 
@@ -81,12 +83,9 @@ describe('GameplayModule wiring', () => {
     await moduleRef.close();
   });
 
-  it('instantiates the board and questions controllers', async () => {
+  it('instantiates the board query service (read model consumed by game-session)', async () => {
     const moduleRef = await buildModule();
-    expect(moduleRef.get(BoardController)).toBeInstanceOf(BoardController);
-    expect(moduleRef.get(QuestionsController)).toBeInstanceOf(
-      QuestionsController,
-    );
+    expect(moduleRef.get(BoardQueryService)).toBeInstanceOf(BoardQueryService);
     await moduleRef.close();
   });
 });

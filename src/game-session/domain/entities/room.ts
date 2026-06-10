@@ -124,6 +124,19 @@ export class Room {
     this._currentTeamId = teamId;
   }
 
+  /**
+   * Record one more blocked cell after the host reviews an answer (plan §14.4 —
+   * a cell is blocked on both correct and incorrect outcomes). Guards the same
+   * invariant the constructor asserts: the blocked count never exceeds the board
+   * size, so a board that is already fully blocked rejects a further increment.
+   */
+  incrementBlockedQuestions(): void {
+    if (this._blockedQuestionsCount >= this._totalQuestionsCount) {
+      throw new InvalidQuestionCountsError();
+    }
+    this._blockedQuestionsCount += 1;
+  }
+
   /** Host-initiated closure: the room leaves ACTIVE for CLOSED. */
   close(now: Date): void {
     this.assertActive();

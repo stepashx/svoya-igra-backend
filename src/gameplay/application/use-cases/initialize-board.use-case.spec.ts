@@ -43,6 +43,7 @@ describe('InitializeBoardUseCase', () => {
       existsByRoomId: jest.fn().mockResolvedValue(false),
       findById: jest.fn().mockResolvedValue(null),
       findByRoomCategoryAndPosition: jest.fn().mockResolvedValue(null),
+      findActiveByRoomId: jest.fn().mockResolvedValue(null),
       listByRoomId: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockResolvedValue(undefined),
     };

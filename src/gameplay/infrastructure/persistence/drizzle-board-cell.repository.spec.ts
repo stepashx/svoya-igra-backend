@@ -69,4 +69,34 @@ describe('DrizzleBoardCellRepository (tx-awareness + existence probe)', () => {
       makeRepo(makeExecutor([])).existsByRoomId('room-1'),
     ).resolves.toBe(false);
   });
+
+  it('findActiveByRoomId maps the single active row, or null when none', async () => {
+    const activeRow = {
+      id: 'cell-7',
+      roomId: 'room-1',
+      questionId: 'question-7',
+      categoryId: 'category-7',
+      points: 400,
+      position: 2,
+      state: 'SELECTED',
+      openedByTeamId: null,
+      answeredByTeamId: null,
+      blockedAt: null,
+    };
+    await expect(
+      makeRepo(makeExecutor([activeRow])).findActiveByRoomId('room-1'),
+    ).resolves.toMatchObject({ id: 'cell-7', state: 'SELECTED' });
+
+    await expect(
+      makeRepo(makeExecutor([])).findActiveByRoomId('room-1'),
+    ).resolves.toBeNull();
+  });
+
+  it('runs findActiveByRoomId on the ambient transaction when one is active', async () => {
+    const db = makeExecutor([]);
+    const tx = makeExecutor([]);
+    await makeRepo(db, tx).findActiveByRoomId('room-1');
+    expect(tx.select).toHaveBeenCalledTimes(1);
+    expect(db.select).not.toHaveBeenCalled();
+  });
 });

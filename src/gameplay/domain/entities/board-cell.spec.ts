@@ -60,6 +60,26 @@ describe('BoardCell', () => {
     expect(cell.state).toBe('SELECTED');
   });
 
+  it('deselects a SELECTED cell back to AVAILABLE (host reject)', () => {
+    const cell = fresh();
+    cell.select();
+    cell.deselect();
+    expect(cell.state).toBe('AVAILABLE');
+    // Round-trips: a deselected cell can be selected again.
+    cell.select();
+    expect(cell.state).toBe('SELECTED');
+  });
+
+  it('rejects deselecting a cell that is not SELECTED', () => {
+    const cell = fresh();
+    expect(() => cell.deselect()).toThrow(InvalidBoardCellTransitionError);
+    expect(cell.state).toBe('AVAILABLE');
+    cell.select();
+    cell.open('team-1');
+    expect(() => cell.deselect()).toThrow(InvalidBoardCellTransitionError);
+    expect(cell.state).toBe('OPENED');
+  });
+
   it('rejects opening a cell that is not SELECTED', () => {
     const cell = fresh();
     expect(() => cell.open('team-1')).toThrow(InvalidBoardCellTransitionError);

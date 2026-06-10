@@ -5,6 +5,19 @@ import { RealtimeEventsPort } from '../../../core/ports/realtime-events.port';
 import { TokenGeneratorPort } from '../../../core/ports/token-generator.port';
 import { AppConfigService } from '../../../config/app-config.service';
 import {
+  BoardCell,
+  BoardCellReconstituteProps,
+  Category,
+  CategoryReconstituteProps,
+  Question,
+  QuestionReconstituteProps,
+} from '../../../gameplay/domain/entities';
+import {
+  BoardCellRepositoryPort,
+  CategoryRepositoryPort,
+  QuestionRepositoryPort,
+} from '../../../gameplay/domain/ports';
+import {
   Player,
   PlayerReconstituteProps,
   Room,
@@ -26,6 +39,7 @@ import {
   Score,
   TeamName,
 } from '../../domain/value-objects';
+import { AnswerTimerRegistry } from '../timers';
 import { BoardInitializationPort, TransactionPort } from '../ports';
 
 /**
@@ -190,3 +204,75 @@ export const makeTeam = (
 
 export const makeTopic = (id: string, title = id): Topic =>
   Topic.reconstitute({ id, title, description: null });
+
+/* -------------------------------------------------------------------------- */
+/* Gameplay test doubles (sub-stage 6.2a battle use cases).                   */
+/* -------------------------------------------------------------------------- */
+
+export const makeBoardCellRepo = (): jest.Mocked<BoardCellRepositoryPort> => ({
+  createMany: jest.fn().mockResolvedValue(undefined),
+  existsByRoomId: jest.fn().mockResolvedValue(false),
+  findById: jest.fn().mockResolvedValue(null),
+  findByRoomCategoryAndPosition: jest.fn().mockResolvedValue(null),
+  findActiveByRoomId: jest.fn().mockResolvedValue(null),
+  listByRoomId: jest.fn().mockResolvedValue([]),
+  update: jest.fn().mockResolvedValue(undefined),
+});
+
+export const makeQuestionRepo = (): jest.Mocked<QuestionRepositoryPort> => ({
+  listAll: jest.fn().mockResolvedValue([]),
+  findById: jest.fn().mockResolvedValue(null),
+  listByCategoryId: jest.fn().mockResolvedValue([]),
+});
+
+export const makeCategoryRepo = (): jest.Mocked<CategoryRepositoryPort> => ({
+  listAll: jest.fn().mockResolvedValue([]),
+  findById: jest.fn().mockResolvedValue(null),
+});
+
+/** A real AnswerTimerRegistry over a config stub (default 60s answer window). */
+export const makeTimerRegistry = (answerSeconds = 60): AnswerTimerRegistry =>
+  new AnswerTimerRegistry({
+    timers: { answerSeconds },
+  } as unknown as AppConfigService);
+
+export const makeBoardCell = (
+  overrides: Partial<BoardCellReconstituteProps> = {},
+): BoardCell =>
+  BoardCell.reconstitute({
+    id: 'cell-1',
+    roomId: 'room-1',
+    questionId: 'question-1',
+    categoryId: 'category-1',
+    points: 200,
+    position: 1,
+    state: 'AVAILABLE',
+    openedByTeamId: null,
+    answeredByTeamId: null,
+    blockedAt: null,
+    ...overrides,
+  });
+
+export const makeQuestion = (
+  overrides: Partial<QuestionReconstituteProps> = {},
+): Question =>
+  Question.reconstitute({
+    id: 'question-1',
+    categoryId: 'category-1',
+    text: 'What is the capital of France?',
+    correctAnswer: 'Paris',
+    points: 200,
+    position: 1,
+    createdAt: FIXED_NOW,
+    ...overrides,
+  });
+
+export const makeCategory = (
+  overrides: Partial<CategoryReconstituteProps> = {},
+): Category =>
+  Category.reconstitute({
+    id: 'category-1',
+    title: 'Geography',
+    position: 0,
+    ...overrides,
+  });

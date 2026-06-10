@@ -73,6 +73,59 @@ export class NotActiveTeamCaptainError extends ForbiddenError {
 /* Domain-rule category (→ HTTP 409).                                         */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A combat action was attempted while the room was in the wrong stage (e.g.
+ * selecting a cell outside GAME_BOARD, or submitting outside QUESTION_OPENED).
+ * Thrown by the combat use cases (6.2) before they touch any board state.
+ */
+export class UnexpectedGameStageError extends DomainRuleError {
+  readonly code = 'UNEXPECTED_GAME_STAGE';
+
+  constructor(
+    message = 'The room is not in the expected stage for this action.',
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * A team tried to submit after the answer timer had already expired (lazy
+ * ClockPort check at submit time; no server scheduler). The stage does not
+ * advance — the host bridges the timeout via the advance endpoint instead.
+ */
+export class AnswerTimeExpiredError extends DomainRuleError {
+  readonly code = 'ANSWER_TIME_EXPIRED';
+
+  constructor(message = 'The answer time has expired.') {
+    super(message);
+  }
+}
+
+/**
+ * A host action (open/reject/review) expected an active cell — one in the
+ * SELECTED or OPENED state — but none was found for the room.
+ */
+export class NoActiveCellError extends DomainRuleError {
+  readonly code = 'NO_ACTIVE_CELL';
+
+  constructor(message = 'There is no active cell for this room.') {
+    super(message);
+  }
+}
+
+/**
+ * The captain tried to select a cell while another cell is already SELECTED or
+ * OPENED. The "one active cell per room" invariant is enforced in the use case
+ * under the per-room lock (the table carries no unique index — see §19).
+ */
+export class CellSelectionInProgressError extends DomainRuleError {
+  readonly code = 'CELL_SELECTION_IN_PROGRESS';
+
+  constructor(message = 'A cell selection is already in progress.') {
+    super(message);
+  }
+}
+
 /** Attempted to select a cell that is not AVAILABLE. */
 export class CellNotAvailableError extends DomainRuleError {
   readonly code = 'CELL_NOT_AVAILABLE';

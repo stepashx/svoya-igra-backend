@@ -15,6 +15,12 @@ export interface BoardCellRepositoryPort {
     categoryId: string,
     position: number,
   ): Promise<BoardCell | null>;
+  /**
+   * The room's single active cell — one whose state is SELECTED or OPENED — or
+   * null when none is active. Underpins the "one active cell per room"
+   * invariant the combat use cases enforce under the per-room lock (6.2).
+   */
+  findActiveByRoomId(roomId: string): Promise<BoardCell | null>;
   listByRoomId(roomId: string): Promise<BoardCell[]>;
   update(cell: BoardCell): Promise<void>;
 }
