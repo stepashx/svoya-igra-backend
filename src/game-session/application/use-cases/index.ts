@@ -10,3 +10,10 @@ export * from './select-topic.use-case';
 export * from './mark-team-ready.use-case';
 export * from './start-game.use-case';
 export * from './close-room.use-case';
+// Battle-cycle use cases (sub-stage 6.2a).
+export * from './select-question.use-case';
+export * from './open-question.use-case';
+export * from './reject-selection.use-case';
+export * from './submit-answer.use-case';
+export * from './review-answer.use-case';
+export * from './advance-on-timeout.use-case';

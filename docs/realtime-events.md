@@ -50,8 +50,9 @@ identity and the state snapshot is the `ReconnectClient` use case (Stage 5B).
 
 ## Feature events
 
-Game Session names (Lobby and Game start) are catalogued below. Gameplay,
-Commerce, Presentation, and Evaluation rows are filled in as each feature lands.
+Game Session names (Lobby and Game start) and the Gameplay catalog (§16.4) are
+below. Commerce, Presentation, and Evaluation rows are filled in as each feature
+lands.
 
 **Name contract only.** This catalog fixes the canonical name, direction, area,
 and audience of each event. Payload schemas and the actual emission wiring are
@@ -157,6 +158,94 @@ token — it refines the single plan `error` into transport vs. domain.
   `client:realtime:leave-room` already exist in
   `realtime-events.constants.ts`. They only attach/detach the socket to a room
   channel — they are **not** room membership.
+
+### Gameplay — server broadcasts (§16.4)
+
+Catalog of the §16.4 "board & questions" broadcasts. **Name contract only** —
+payload schemas and emission wiring are **Stage 6.2**; nothing here implies an
+implementation. The added **Status** column records each name's Stage-6
+disposition (active in 6.2, reserved, or superseded). Audience is a publishing
+concern (see the Audience section above), shown per row. See _Gameplay contract
+notes_ below for the secrecy and timer constraints fixed now.
+
+| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+|---|---|---|---|---|---|---|
+| `server:gameplay:board-state-updated` | server | gameplay | room | Coarse snapshot of the board (6×5, categories, point values, taken cells) | §16.4 | Stage 6.2 (on entering GAME_BOARD + reconnect snapshot) |
+| `server:gameplay:cell-selected` | server | gameplay | room | Captain's cell pick (room-wide pending highlight) | §16.4 | Superseded by cell-selection-requested — name reserved, NOT emitted in Stage 6 |
+| `server:gameplay:cell-selection-requested` | server | gameplay | host | Active-team captain requested a cell; host is prompted to approve/reject | §16.4 | Stage 6.2 (SelectQuestion) |
+| `server:gameplay:cell-selection-approved` | server | gameplay | room | Host approved → transition GAME_BOARD → QUESTION_OPENED | §16.4 | Stage 6.2 (OpenQuestion) |
+| `server:gameplay:cell-selection-rejected` | server | gameplay | room | Host rejected → stays in GAME_BOARD, captain re-picks | §16.4 | Stage 6.2 (OpenQuestion/reject) |
+| `server:gameplay:question-opened` | server | gameplay | room | Question revealed (text/points/category) — WITHOUT correctAnswer | §16.4 | Stage 6.2 (OpenQuestion) |
+| `server:gameplay:question-timer-started` | server | gameplay | room | Answer timer started; carries endsAt (client counts down locally) | §16.4 | Stage 6.2 (OpenQuestion) |
+| `server:gameplay:question-timer-ended` | server | gameplay | room | Answer timer expired (lazy ClockPort check, no server scheduler) → QUESTION_OPENED → ANSWER_REVIEW | §16.4 | Stage 6.2 |
+| `server:gameplay:answer-submitted` | server | gameplay | room | Team submitted an answer (fact only; answer text payload TBD in 6.2 — possibly host-only) | §16.4 | Stage 6.2 (SubmitAnswer) |
+| `server:gameplay:answer-accepted` | server | gameplay | room | Host accepted the answer — review outcome, NOT scoring | §16.4 | Stage 6.2 (ReviewAnswer) |
+| `server:gameplay:answer-rejected` | server | gameplay | room | Host rejected the answer — review outcome, NOT scoring | §16.4 | Stage 6.2 (ReviewAnswer) |
+| `server:gameplay:question-correct-answer-shown-to-host` | server | gameplay | host | Correct answer shown ONLY to host after the team answered | §16.4 | Stage 6.2 (ReviewAnswer) — HOST-ONLY, never to players (Этап2 §8) |
+| `server:gameplay:cell-blocked` | server | gameplay | room | Cell blocked (on both correct and incorrect answers) | §16.4 | Stage 6.2 (ReviewAnswer) |
+| `server:gameplay:score-changed` | server | gameplay | room | Team score changed | §16.4 | Reserved — Stage 7 (Scoring); NOT emitted in Stage 6 |
+| `server:game-session:game-turn-changed` | server | game-session | room | Active team changed | §16.4 → see game-session | Shared §16.3/§16.4 — not duplicated in gameplay (emitted by StartGame in 5.2a and by MoveToNextTurn in 6.2) |
+
+### Gameplay — client commands (§16.4)
+
+Incoming commands, area `gameplay`. Audience does not apply to commands; sender
+authorization does. **Emits** lists the resulting broadcasts by their short
+name; payloads are Stage 6.2. These rows are **forward-path** — not wired in
+Stage 6; the live commands run over REST (§15.5–15.7). See _Gameplay contract
+notes_ below.
+
+| Canonical name | Direction | Area | Purpose | Emits | Sender |
+|---|---|---|---|---|---|
+| `client:gameplay:select-cell` | client | gameplay | Captain picks a cell (SelectQuestion) | `cell-selection-requested` | captain (active team) |
+| `client:gameplay:approve-selection` | client | gameplay | Host approves (OpenQuestion) | `cell-selection-approved`, `question-opened`, `question-timer-started` | host |
+| `client:gameplay:reject-selection` | client | gameplay | Host rejects the pick | `cell-selection-rejected` | host |
+| `client:gameplay:submit-answer` | client | gameplay | Team submits an answer (SubmitAnswer) | `answer-submitted` | captain/team |
+| `client:gameplay:review-answer` | client | gameplay | Host accepts/rejects (ReviewAnswer) | `answer-accepted` \| `answer-rejected`, `cell-blocked`, `game-turn-changed` (+ Stage 7: `score-changed`) | host |
+| `client:gameplay:reveal-correct-answer` | client | gameplay | Host requests the correct answer (§14.6 optional) | `question-correct-answer-shown-to-host` | host |
+
+### Plan name → canonical name (§16.4)
+
+Same derivation as §16.1–16.3: a plan token `x:y` becomes `server:gameplay:x-y`
+in kebab-case (camelCase split on case, e.g. `stateUpdated` → `state-updated`,
+`correctAnswerShownToHost` → `correct-answer-shown-to-host`). Two tokens are
+special: `cell:selected` is reserved/superseded (see above) and `game:turnChanged`
+keeps its existing `game-session` name — shared by §16.3/§16.4, not a second name.
+
+| Plan name (§16.4) | Canonical name |
+|---|---|
+| `board:stateUpdated` | `server:gameplay:board-state-updated` |
+| `cell:selected` | `server:gameplay:cell-selected` (reserved — superseded by `cell:selectionRequested`, not emitted in Stage 6) |
+| `cell:selectionRequested` | `server:gameplay:cell-selection-requested` |
+| `cell:selectionApproved` | `server:gameplay:cell-selection-approved` |
+| `cell:selectionRejected` | `server:gameplay:cell-selection-rejected` |
+| `question:opened` | `server:gameplay:question-opened` |
+| `question:timerStarted` | `server:gameplay:question-timer-started` |
+| `question:timerEnded` | `server:gameplay:question-timer-ended` |
+| `answer:submitted` | `server:gameplay:answer-submitted` |
+| `answer:accepted` | `server:gameplay:answer-accepted` |
+| `answer:rejected` | `server:gameplay:answer-rejected` |
+| `question:correctAnswerShownToHost` | `server:gameplay:question-correct-answer-shown-to-host` |
+| `cell:blocked` | `server:gameplay:cell-blocked` |
+| `score:changed` | `server:gameplay:score-changed` (reserved — Stage 7, not emitted in Stage 6) |
+| `game:turnChanged` | `server:game-session:game-turn-changed` (see game-session; shared §16.3/§16.4 — not a second name) |
+
+### Gameplay contract notes (§16.4)
+
+- **Payloads & emission are Stage 6.2.** This section fixes only the
+  name / direction / area / audience contract — no payload shape or emission
+  wiring is implied.
+- **Secrecy, fixed now.** `question-opened` goes to the **room without
+  `correctAnswer`**; the correct answer reaches the host **only** via
+  `question-correct-answer-shown-to-host` (host audience) and is never broadcast
+  to players (Этап 2 §8).
+- **Timer carries `endsAt`.** `question-timer-started` carries `endsAt`; the
+  timer is stored as `startedAt` / `endsAt` / `status`, the client counts down
+  locally, and expiry is a **lazy `ClockPort` check** with no server scheduler.
+- **Battle-cycle mutations are REST.** The real mutations run over REST
+  (§15.5–15.7 — SelectQuestion / OpenQuestion / SubmitAnswer / ReviewAnswer); the
+  incoming `client:gameplay:*` commands above are the planned WS forward-path and
+  are not implemented in Stage 6, exactly as `client:game-session:*` stayed
+  forward-path in Stage 5.0.
 
 ## Stage 5.2a — what ships now
 
@@ -316,5 +405,33 @@ out of scope and deferred.
   (§14.1) — the room must outlive a host reload.
 - **No token TTL.** An expired token is simply "not found" and takes the same
   invalid-token path; TTL enforcement is post-MVP.
-- **`game:canStartChanged` stays room-wide.** Narrowing it to a host audience
-  needs `emitToHost` + a reverse host-socket lookup and is deferred.
+- **`game:canStartChanged` stays room-wide.** The host-socket mechanism now
+  exists (`HostRealtimeEventsPort.emitToHost`, Stage 6.2b below), but narrowing
+  this lobby event to the host audience remains deferred.
+
+## Stage 6.2b — host-socket delivery
+
+Sub-stage 6.2b implements the **host audience** for the two §16.4 host rows:
+`cell-selection-requested` (now host-only, no longer room-wide) and
+`question-correct-answer-shown-to-host` (new emission). The battle use cases
+publish them through a dedicated application port,
+`HostRealtimeEventsPort.emitToHost(roomId, event, payload)`
+(`src/game-session/application/ports/`); the core `RealtimeEventsPort` is
+untouched.
+
+- **Mechanism: presence reverse-lookup, not a transport group.** The
+  `PresenceHostRealtimeEventsAdapter` (`presentation/ws/`) resolves the host's
+  live sockets via the 5.2b presence registry (`h:<roomId>` identity, every
+  open host tab) and emits to each with `emitToClient`. A Socket.IO "host
+  group" was deliberately rejected: the base gateway's public
+  `client:realtime:join-room` would let any socket join it and read host
+  secrets.
+- **Reveal gating.** `question-correct-answer-shown-to-host`
+  (`{ roomId, cellId, correctAnswer }`) is emitted by ReviewAnswer **only when
+  the request carries `revealAnswer: true`**. It is an addition to REST —
+  `current/host` / `current/answer` (HostAuthGuard) remain the source of
+  truth; the room-wide payloads still never contain `correctAnswer`.
+- **No-op without host sockets.** With no live host socket the emission simply
+  addresses nobody; the REST mutation succeeds unchanged.
+- **Single-node.** Presence is in-memory per process (see _Presence model_
+  above), so host delivery shares the same single-node MVP scope.

@@ -86,6 +86,15 @@ export class LobbyPresenceRegistry {
     return [...(this.byIdentity.get(identityKey) ?? [])];
   }
 
+  /**
+   * Live socket ids of the room's host (every open host tab). Reverse lookup
+   * for host-only delivery (6.2b); the `h:` key shape stays private to this
+   * file, next to {@link presenceIdentityKey}.
+   */
+  socketsForHost(roomId: string): readonly string[] {
+    return this.socketsForIdentity(`h:${roomId}`);
+  }
+
   has(socketId: string): boolean {
     return this.bySocket.has(socketId);
   }

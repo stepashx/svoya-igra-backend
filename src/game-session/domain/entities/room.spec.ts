@@ -3,6 +3,7 @@ import {
   InvalidStageTransitionError,
   RoomNotActiveError,
 } from '../errors';
+import { GameStage } from '../types';
 import { ReconnectToken, RoomCode } from '../value-objects';
 import { Room } from './room';
 
@@ -19,6 +20,23 @@ describe('Room', () => {
       },
       now,
     );
+
+  /** Rehydrate a room parked at an arbitrary stage (for transition tests). */
+  const makeRoomAt = (currentStage: GameStage): Room =>
+    Room.reconstitute({
+      id: 'room-1',
+      code: RoomCode.create('ABCDE'),
+      status: 'ACTIVE',
+      currentStage,
+      hostId: 'host-1',
+      hostReconnectToken: ReconnectToken.create('host-token'),
+      currentTeamId: null,
+      totalQuestionsCount: 30,
+      blockedQuestionsCount: 0,
+      currentShopRound: 0,
+      createdAt: now,
+      finishedAt: null,
+    });
 
   it('creates an ACTIVE room in the LOBBY stage with a full board', () => {
     const room = makeRoom();
@@ -46,6 +64,36 @@ describe('Room', () => {
       InvalidStageTransitionError,
     );
     expect(room.currentStage).toBe('LOBBY');
+  });
+
+  it('walks the legal board-loop transitions', () => {
+    const legal: ReadonlyArray<[GameStage, GameStage]> = [
+      ['GAME_BOARD', 'QUESTION_OPENED'],
+      ['QUESTION_OPENED', 'ANSWER_REVIEW'],
+      ['ANSWER_REVIEW', 'GAME_BOARD'],
+      ['ANSWER_REVIEW', 'SHOP'],
+      ['SHOP', 'GAME_BOARD'],
+    ];
+    for (const [from, to] of legal) {
+      const room = makeRoomAt(from);
+      room.transitionTo(to);
+      expect(room.currentStage).toBe(to);
+    }
+  });
+
+  it('rejects illegal board-loop transitions and keeps the stage', () => {
+    const illegal: ReadonlyArray<[GameStage, GameStage]> = [
+      ['GAME_BOARD', 'SHOP'],
+      ['GAME_BOARD', 'ANSWER_REVIEW'],
+      ['QUESTION_OPENED', 'GAME_BOARD'],
+      ['ANSWER_REVIEW', 'QUESTION_OPENED'],
+      ['SHOP', 'QUESTION_OPENED'],
+    ];
+    for (const [from, to] of illegal) {
+      const room = makeRoomAt(from);
+      expect(() => room.transitionTo(to)).toThrow(InvalidStageTransitionError);
+      expect(room.currentStage).toBe(from);
+    }
   });
 
   it('assigns the current team', () => {
@@ -90,6 +138,35 @@ describe('Room', () => {
     expect(() => room.close(new Date('2026-01-01T02:30:00.000Z'))).toThrow(
       RoomNotActiveError,
     );
+  });
+
+  it('increments the blocked-questions count after an answer review', () => {
+    const room = makeRoomAt('ANSWER_REVIEW');
+    expect(room.blockedQuestionsCount).toBe(0);
+    room.incrementBlockedQuestions();
+    room.incrementBlockedQuestions();
+    expect(room.blockedQuestionsCount).toBe(2);
+  });
+
+  it('rejects incrementing the blocked count past the board size', () => {
+    const room = Room.reconstitute({
+      id: 'room-1',
+      code: RoomCode.create('ABCDE'),
+      status: 'ACTIVE',
+      currentStage: 'GAME_BOARD',
+      hostId: 'host-1',
+      hostReconnectToken: ReconnectToken.create('host-token'),
+      currentTeamId: null,
+      totalQuestionsCount: 30,
+      blockedQuestionsCount: 30,
+      currentShopRound: 0,
+      createdAt: now,
+      finishedAt: null,
+    });
+    expect(() => room.incrementBlockedQuestions()).toThrow(
+      InvalidQuestionCountsError,
+    );
+    expect(room.blockedQuestionsCount).toBe(30);
   });
 
   it('enforces blockedQuestionsCount <= totalQuestionsCount', () => {

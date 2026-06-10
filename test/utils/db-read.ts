@@ -26,6 +26,24 @@ export async function readPlayerConnectionStatus(
   return result.rows[0]?.connection_status ?? null;
 }
 
+/** A persisted board cell, narrowed to the fields the board-init e2e asserts. */
+export interface BoardCellRow {
+  room_id: string;
+  category_id: string;
+  points: number;
+  position: number;
+  state: string;
+}
+
+/** Every board cell seeded for a room (used to assert board-init). */
+export async function readBoardCells(roomId: string): Promise<BoardCellRow[]> {
+  const result = await getPool().query<BoardCellRow>(
+    'SELECT room_id, category_id, points, position, state FROM board_cells WHERE room_id = $1',
+    [roomId],
+  );
+  return result.rows;
+}
+
 export async function closeDbReadPool(): Promise<void> {
   if (pool) {
     await pool.end();

@@ -23,7 +23,12 @@ import {
   TOPIC_REPOSITORY_PORT,
   TopicRepositoryPort,
 } from '../../domain/ports';
-import { TRANSACTION_PORT, TransactionPort } from '../ports';
+import {
+  BOARD_INITIALIZATION_PORT,
+  BoardInitializationPort,
+  TRANSACTION_PORT,
+  TransactionPort,
+} from '../ports';
 import { GameSessionEvent, roomSummary, teamSummary } from '../events';
 import {
   RoomAggregateSnapshot,
@@ -52,6 +57,8 @@ export class StartGameUseCase {
     @Inject(REALTIME_EVENTS_PORT)
     private readonly realtime: RealtimeEventsPort,
     @Inject(TRANSACTION_PORT) private readonly tx: TransactionPort,
+    @Inject(BOARD_INITIALIZATION_PORT)
+    private readonly board: BoardInitializationPort,
     private readonly assembler: RoomSnapshotAssembler,
     private readonly config: AppConfigService,
   ) {}
@@ -88,6 +95,9 @@ export class StartGameUseCase {
         await this.teams.update(team);
       }
       await this.rooms.update(room);
+
+      // Seed the room's 6×5 board within this same transaction (idempotent).
+      await this.board.initializeBoard(room.id);
 
       this.emitStartEvents(room.id, roomSummary(room), ordered, firstTeam.id);
 

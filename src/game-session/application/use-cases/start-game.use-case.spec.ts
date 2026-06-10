@@ -7,6 +7,7 @@ import { GameSessionEvent } from '../events';
 import { RoomSnapshotAssembler } from '../queries/room-snapshot.assembler';
 import { StartGameUseCase } from './start-game.use-case';
 import {
+  makeBoardInit,
   makeConfig,
   makePlayerRepo,
   makeRandom,
@@ -30,6 +31,7 @@ describe('StartGameUseCase', () => {
     const topics = makeTopicRepo();
     const players = makePlayerRepo();
     const realtime = makeRealtime();
+    const board = makeBoardInit();
     const room = makeRoom({ currentStage: 'READY_CHECK' });
     rooms.findById.mockResolvedValue(room);
     topics.findAll.mockResolvedValue([
@@ -44,10 +46,11 @@ describe('StartGameUseCase', () => {
       makeRandom(),
       realtime,
       makeTransactionPort(),
+      board,
       new RoomSnapshotAssembler(players, teams),
       makeConfig(),
     );
-    return { uc, rooms, teams, topics, realtime, room };
+    return { uc, rooms, teams, topics, realtime, room, board };
   };
 
   it('rejects when fewer than the minimum teams are ready', async () => {
@@ -92,6 +95,19 @@ describe('StartGameUseCase', () => {
       GameSessionEvent.GameTurnChanged,
       GameSessionEvent.GameStateUpdated,
     ]);
+  });
+
+  it('initializes the board exactly once for the started room', async () => {
+    const { uc, teams, board } = build();
+    teams.findByRoomId.mockResolvedValue([
+      makeTeam({ id: 'team-1', isReady: true, selectedTopicId: 'topic-1' }),
+      makeTeam({ id: 'team-2', isReady: true, selectedTopicId: 'topic-2' }),
+    ]);
+
+    await uc.execute({ roomId: 'room-1' });
+
+    expect(board.initializeBoard).toHaveBeenCalledTimes(1);
+    expect(board.initializeBoard).toHaveBeenCalledWith('room-1');
   });
 
   it('auto-assigns a free topic to a ready team that has none', async () => {

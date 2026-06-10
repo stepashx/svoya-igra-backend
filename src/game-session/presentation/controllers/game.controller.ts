@@ -16,12 +16,19 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
-import { LobbyQueryService } from '../../application/queries';
-import { StartGameUseCase } from '../../application/use-cases';
+import {
+  LobbyQueryService,
+  TimerQueryService,
+} from '../../application/queries';
+import {
+  AdvanceOnTimeoutUseCase,
+  StartGameUseCase,
+} from '../../application/use-cases';
 import {
   RoomStateResponseDto,
   StageResponseDto,
   TeamResponseDto,
+  TimerResponseDto,
 } from '../dto/response';
 import {
   CurrentHost,
@@ -33,21 +40,25 @@ import {
   toRoomStateResponse,
   toStageResponse,
   toTeamResponse,
+  toTimerResponse,
 } from '../mappers';
 
-const NOT_IMPLEMENTED = 'Gameplay flow arrives in a later sub-stage.';
+const NOT_IMPLEMENTED = 'Game finish arrives in a later stage.';
 
 /**
  * Game-flow REST surface (plan §15.7), nested under a room. Sub-stage 5.2a
- * implements game start plus the lobby/game read endpoints; the gameplay
- * controls (timer / advance / finish) remain 501 until later sub-stages.
+ * shipped game start plus the lobby/game read endpoints. Sub-stage 6.2a wires
+ * the answer-timer read and the host timeout bridge (`advance`); `finish`
+ * remains 501 (Stage 9).
  */
 @ApiTags(SwaggerTag.GameSession)
 @Controller('rooms/:code/game')
 export class GameController {
   constructor(
     private readonly startGame: StartGameUseCase,
+    private readonly advanceOnTimeout: AdvanceOnTimeoutUseCase,
     private readonly lobby: LobbyQueryService,
+    private readonly timers: TimerQueryService,
   ) {}
 
   @Post('start')
@@ -87,17 +98,23 @@ export class GameController {
   }
 
   @Get('timer')
-  @ApiOperation({ summary: 'Get the timer state' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED })
-  getTimer(): never {
-    throw new NotImplementedException();
+  @ApiOperation({ summary: 'Get the answer timer state' })
+  @ApiOkResponse({ type: TimerResponseDto })
+  async getTimer(@Param('code') code: string): Promise<TimerResponseDto> {
+    return toTimerResponse(await this.timers.read(code));
   }
 
   @Post('advance')
-  @ApiOperation({ summary: 'Advance to the next stage' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED })
-  advance(): never {
-    throw new NotImplementedException();
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(HostAuthGuard)
+  @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
+  @ApiOperation({
+    summary: 'Advance past an expired answer timer (host timeout bridge)',
+  })
+  @ApiOkResponse({ type: StageResponseDto })
+  async advance(@CurrentHost() host: HostContext): Promise<StageResponseDto> {
+    const result = await this.advanceOnTimeout.execute({ roomId: host.roomId });
+    return { currentStage: result.stage };
   }
 
   @Post('finish')

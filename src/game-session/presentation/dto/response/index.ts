@@ -3,3 +3,7 @@ export * from './player.response';
 export * from './team.response';
 export * from './topic.response';
 export * from './room-state.response';
+// Battle-cycle response DTOs (sub-stage 6.2a).
+export * from './board.response';
+export * from './timer.response';
+export * from './question.response';
