@@ -28,14 +28,26 @@ import {
   TEAM_REPOSITORY_PORT,
   TeamRepositoryPort,
 } from '../../domain/ports';
-import { AnswerTimerRegistry } from '../timers';
+import {
+  AnswerTimerRegistry,
+  ShopTimerRegistry,
+  ShopTimerState,
+} from '../timers';
 import {
   HOST_REALTIME_EVENTS_PORT,
   HostRealtimeEventsPort,
   TRANSACTION_PORT,
   TransactionPort,
 } from '../ports';
-import { GameSessionEvent, GameplayEvent, boardCellSummary } from '../events';
+import {
+  CommerceEvent,
+  GameSessionEvent,
+  GameplayEvent,
+  boardCellSummary,
+} from '../events';
+
+/** Every-Nth-blocked-question shop cadence (§14.8) — the Stage 8.2 policy. */
+const SHOP_CADENCE = 6;
 
 export interface ReviewAnswerInput {
   roomId: string;
@@ -64,12 +76,21 @@ export interface ReviewAnswerResult {
  * turn moves to the next team (round-robin by turn order), and the answer timer
  * is cleared.
  *
+ * Shop cadence (§14.8, 8.2): when the post-increment blocked count hits a
+ * {@link SHOP_CADENCE} multiple — or the board is exhausted — the room enters
+ * SHOP instead of GAME_BOARD, the {@link ShopTimerRegistry} starts (fresh
+ * stamps on every entry) and `shop-opened` (or `shop-final-opened` on the
+ * exhausted board) is appended LAST to the broadcast block. The turn still
+ * moves (Этап2 §16) and a REJECTED review reaches the threshold too — the
+ * cadence counts blocked cells, not correct answers.
+ *
  * On an accepted answer the OPENING team scores (§14.7): `earnedScore` and
  * `balance` both grow by the cell's points and `score-changed` follows
  * `answer-accepted` room-wide; a rejected answer changes no score and emits no
  * `score-changed`. Broadcasts (room-wide): `answer-accepted` /
  * `answer-rejected` (+ `score-changed` on accept), `cell-blocked`,
- * `game-turn-changed` (the shared game-session name) and `board-state-updated`.
+ * `game-turn-changed` (the shared game-session name), `board-state-updated`
+ * and, on a shop entry, `shop-opened`/`shop-final-opened` last.
  * With `revealAnswer` the correct answer additionally goes to the host's
  * sockets only (`question-correct-answer-shown-to-host` via
  * {@link HostRealtimeEventsPort}, 6.2b) — it never enters a room-wide payload
@@ -91,6 +112,7 @@ export class ReviewAnswerUseCase {
     @Inject(CLOCK_PORT) private readonly clock: ClockPort,
     @Inject(TRANSACTION_PORT) private readonly tx: TransactionPort,
     private readonly timer: AnswerTimerRegistry,
+    private readonly shopTimer: ShopTimerRegistry,
   ) {}
 
   async execute(input: ReviewAnswerInput): Promise<ReviewAnswerResult> {
@@ -126,7 +148,17 @@ export class ReviewAnswerUseCase {
       const answeredByTeamId = input.accepted ? active.openedByTeamId : null;
       active.block(this.clock.now(), answeredByTeamId); // OPENED → BLOCKED
       room.incrementBlockedQuestions();
-      room.transitionTo('GAME_BOARD');
+      // §14.8 shop cadence, read AFTER the increment: every SHOP_CADENCE-th
+      // blocked cell (and the exhausted board) opens the shop; anything else
+      // returns to the board exactly as before 8.2.
+      const entersShop =
+        room.isBoardExhausted ||
+        room.blockedQuestionsCount % SHOP_CADENCE === 0;
+      if (entersShop) {
+        room.enterShop();
+      } else {
+        room.transitionTo('GAME_BOARD');
+      }
 
       const roomTeams = await this.teams.findByRoomId(room.id);
       // §14.7 scoring on accept: the OPENING team (not the current turn
@@ -148,6 +180,13 @@ export class ReviewAnswerUseCase {
       await this.rooms.update(room);
       if (scoringTeam) {
         await this.teams.update(scoringTeam);
+      }
+
+      // Started UNCONDITIONALLY on every entry (round 2 on the 12th block gets
+      // fresh endsAt/minClosableAt), at the open-question timer.start position.
+      let shopState: ShopTimerState | null = null;
+      if (entersShop) {
+        shopState = this.shopTimer.start(room.id, this.clock.now());
       }
 
       this.realtime.emitToRoom(
@@ -197,6 +236,23 @@ export class ReviewAnswerUseCase {
         roomId: room.id,
         cells: cells.map(boardCellSummary),
       });
+      // Shop entry (8.2): appended LAST — the six broadcasts above are the
+      // pre-8.2 contract and stay untouched. Finality picks the event name.
+      if (shopState) {
+        this.realtime.emitToRoom(
+          room.id,
+          room.isBoardExhausted
+            ? CommerceEvent.ShopFinalOpened
+            : CommerceEvent.ShopOpened,
+          {
+            roomId: room.id,
+            currentShopRound: room.currentShopRound,
+            startedAt: shopState.startedAt,
+            endsAt: shopState.endsAt,
+            minClosableAt: shopState.minClosableAt,
+          },
+        );
+      }
 
       return { room, cell: active, nextTeamId };
     });

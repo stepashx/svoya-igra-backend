@@ -39,7 +39,7 @@ import {
   Score,
   TeamName,
 } from '../../domain/value-objects';
-import { AnswerTimerRegistry } from '../timers';
+import { AnswerTimerRegistry, ShopTimerRegistry } from '../timers';
 import {
   BoardInitializationPort,
   HostRealtimeEventsPort,
@@ -242,6 +242,15 @@ export const makeCategoryRepo = (): jest.Mocked<CategoryRepositoryPort> => ({
 export const makeTimerRegistry = (answerSeconds = 60): AnswerTimerRegistry =>
   new AnswerTimerRegistry({
     timers: { answerSeconds },
+  } as unknown as AppConfigService);
+
+/** A real ShopTimerRegistry over a config stub (8.2; 120s window, 30s min). */
+export const makeShopTimerRegistry = (
+  shopSeconds = 120,
+  shopMinSeconds = 30,
+): ShopTimerRegistry =>
+  new ShopTimerRegistry({
+    timers: { shopSeconds, shopMinSeconds },
   } as unknown as AppConfigService);
 
 export const makeBoardCell = (

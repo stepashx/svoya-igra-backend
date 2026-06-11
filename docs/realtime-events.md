@@ -249,25 +249,26 @@ keeps its existing `game-session` name — shared by §16.3/§16.4, not a second
 
 ### Commerce — server broadcasts (§16.5)
 
-Catalog of the §16.5 "shop & inventory" broadcasts. **Name contract only** —
-the constants live in
+Catalog of the §16.5 "shop & inventory" broadcasts. The constants live in
 `src/game-session/application/events/commerce-events.ts` (next to the
-game-session use cases that will emit them, Design A), but payload schemas and
-the emission wiring are **Stages 8.2/8.3**; nothing is emitted in 8.1. The
-**Status** column records each name's disposition. Audience is a publishing
-concern (see the Audience section above), shown per row. See _Commerce
-contract notes_ below for the privacy constraint fixed now.
+game-session use cases that emit them, Design A). The shop lifecycle trio —
+`shop-opened`, `shop-final-opened`, `shop-closed` — is **emitted since
+sub-stage 8.2** (ReviewAnswerUseCase opens the shop, CloseShopUseCase closes
+it); the purchase chain remains a **name contract reserved for Stage 8.3**.
+The **Status** column records each name's disposition. Audience is a
+publishing concern (see the Audience section above), shown per row. See
+_Commerce contract notes_ below for the privacy constraint fixed now.
 
 | Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
 |---|---|---|---|---|---|---|
-| `server:commerce:shop-opened` | server | commerce | room | Shop opened (ANSWER_REVIEW → SHOP, every-6th-question cadence) | §16.5 | Reserved for Stage 8.2 (EnterShop) — NOT emitted in 8.1 |
-| `server:commerce:shop-final-opened` | server | commerce | room | Final shop opened (board exhausted, before presentations) | §16.5 | Reserved for Stage 8.2 — NOT emitted in 8.1 |
+| `server:commerce:shop-opened` | server | commerce | room | Shop opened (ANSWER_REVIEW → SHOP, every-6th-question cadence) | §16.5 | Emitted since 8.2 by ReviewAnswerUseCase (shop trigger) |
+| `server:commerce:shop-final-opened` | server | commerce | room | Final shop opened (board exhausted, before presentations) | §16.5 | Emitted since 8.2 by ReviewAnswerUseCase (shop trigger, exhausted board) |
 | `server:commerce:shop-state-updated` | server | commerce | room | Coarse snapshot of the shop (catalog + purchased state) — WITHOUT publicUrl/QR content | §16.5 | Reserved for Stage 8.3 (first emitter is the purchase) — NOT emitted in 8.1 |
 | `server:commerce:shop-item-purchased` | server | commerce | room | A team bought an item (item + buying team; price snapshot) — WITHOUT publicUrl/QR content | §16.5 | Reserved for Stage 8.3 (Purchase) — NOT emitted in 8.1 |
 | `server:commerce:shop-item-unavailable` | server | commerce | room | An item became unavailable (purchased by another team, §14.8) | §16.5 | Reserved for Stage 8.3 (Purchase) — NOT emitted in 8.1 |
 | `server:commerce:shop-purchase-rejected` | server | commerce | captain | The captain's purchase was rejected (insufficient balance / already purchased) | §16.5 | Reserved for Stage 8.3 — may stay REST-only (no captain emitter yet, see notes) |
 | `server:commerce:inventory-updated` | server | commerce | team | The team's inventory gained the bought QR tool (publicUrl allowed HERE — team audience) | §16.5 | Reserved for Stage 8.3 (Purchase) — NOT emitted in 8.1 |
-| `server:commerce:shop-closed` | server | commerce | room | Shop closed (host action or shop timer) → back to GAME_BOARD or on to presentations | §16.5 | Reserved for Stage 8.2 (CloseShop) — NOT emitted in 8.1 |
+| `server:commerce:shop-closed` | server | commerce | room | Shop closed (host action or shop timer) → back to GAME_BOARD or on to presentations | §16.5 | Emitted since 8.2 by CloseShopUseCase |
 
 ### Commerce — client commands (§16.5)
 
@@ -299,12 +300,15 @@ in kebab-case (camelCase split on case, e.g. `finalOpened` → `final-opened`,
 
 ### Commerce contract notes (§16.5)
 
-- **Nothing is emitted in 8.1.** Sub-stage 8.1 fixes only the
-  name / direction / area / audience contract (the constants exist, unwired).
-  The shop lifecycle events (`shop-opened`, `shop-final-opened`, `shop-closed`)
-  arrive with the 8.2 use cases; the purchase chain (`shop-item-purchased`,
-  `shop-item-unavailable`, `shop-state-updated`, `shop-purchase-rejected`,
-  `inventory-updated`) arrives with 8.3.
+- **The shop lifecycle is live since 8.2; the purchase chain waits for 8.3.**
+  Sub-stage 8.1 fixed the name / direction / area / audience contract;
+  sub-stage 8.2 wires the lifecycle: `shop-opened` / `shop-final-opened` fire
+  room-wide LAST in the ReviewAnswerUseCase broadcast block (payload
+  `{roomId, currentShopRound, startedAt, endsAt, minClosableAt}`) and
+  `shop-closed` fires from CloseShopUseCase (payload
+  `{roomId, currentShopRound, nextStage}`). The purchase chain
+  (`shop-item-purchased`, `shop-item-unavailable`, `shop-state-updated`,
+  `shop-purchase-rejected`, `inventory-updated`) arrives with 8.3.
 - **QR privacy, fixed now.** The QR tool belongs to the buying team. Room-wide
   payloads — `shop-item-purchased` and `shop-state-updated` in particular —
   must NEVER carry `publicUrl` or any QR content; the tool reaches its owners

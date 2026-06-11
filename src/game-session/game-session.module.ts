@@ -12,10 +12,11 @@ import {
   RoomSnapshotAssembler,
   TimerQueryService,
 } from './application/queries';
-import { AnswerTimerRegistry } from './application/timers';
+import { AnswerTimerRegistry, ShopTimerRegistry } from './application/timers';
 import {
   AdvanceOnTimeoutUseCase,
   CloseRoomUseCase,
+  CloseShopUseCase,
   CreateRoomUseCase,
   CreateTeamUseCase,
   JoinRoomUseCase,
@@ -101,6 +102,13 @@ import {
  * Sub-stage 8.1 imports {@link CommerceModule} for the shop seam (the four
  * commerce repository ports, Design A — exactly as GameplayModule) and ships
  * the Shop/Inventory 501 stubs; the shop/purchase use cases arrive in 8.2/8.3.
+ *
+ * Sub-stage 8.2 wires the shop lifecycle: the every-6th cadence branch in
+ * {@link ReviewAnswerUseCase} (emitting `shop-opened`/`shop-final-opened`),
+ * the in-memory {@link ShopTimerRegistry} with its minimum-open window,
+ * {@link CloseShopUseCase}, and the real shop items/round/close endpoints —
+ * the catalog read model (ShopQueryService) comes from the imported
+ * {@link CommerceModule}. Purchases stay 501 until 8.3.
  */
 @Module({
   imports: [
@@ -152,6 +160,10 @@ import {
     SubmitAnswerUseCase,
     ReviewAnswerUseCase,
     AdvanceOnTimeoutUseCase,
+    // Shop flow (sub-stage 8.2): the shop timer and the host close; the
+    // catalog read model (ShopQueryService) comes from CommerceModule.
+    ShopTimerRegistry,
+    CloseShopUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,

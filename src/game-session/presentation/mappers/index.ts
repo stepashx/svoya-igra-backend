@@ -6,3 +6,5 @@ export * from './room-state.presentation-mapper';
 // Battle-cycle presentation mappers (sub-stage 6.2a).
 export * from './board.presentation-mapper';
 export * from './question.presentation-mapper';
+// Shop presentation mappers (sub-stage 8.2).
+export * from './shop.presentation-mapper';

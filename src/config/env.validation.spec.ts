@@ -59,6 +59,24 @@ describe('validateEnv', () => {
     expect(env.MINIO_PATH_STYLE).toBe(true);
   });
 
+  it('defaults SHOP_MIN_SECONDS to 30 and coerces an explicit value', () => {
+    expect(validateEnv(requiredEnv).SHOP_MIN_SECONDS).toBe(30);
+    expect(
+      validateEnv({ ...requiredEnv, SHOP_MIN_SECONDS: '45' }).SHOP_MIN_SECONDS,
+    ).toBe(45);
+  });
+
+  it('rejects an empty SHOP_MIN_SECONDS instead of silently coercing to 0', () => {
+    // positive(), not nonnegative(): '' coerces to 0, which would silently
+    // disable the shop minimum — the boot must fail loudly instead.
+    expect(() => validateEnv({ ...requiredEnv, SHOP_MIN_SECONDS: '' })).toThrow(
+      /SHOP_MIN_SECONDS/,
+    );
+    expect(() =>
+      validateEnv({ ...requiredEnv, SHOP_MIN_SECONDS: '0' }),
+    ).toThrow(/SHOP_MIN_SECONDS/);
+  });
+
   it('defaults LATE_PENALTY and keeps the env var name', () => {
     expect(validateEnv(requiredEnv).LATE_PENALTY).toBe(1);
     expect(

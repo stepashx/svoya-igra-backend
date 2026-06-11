@@ -3,7 +3,7 @@ import {
   QuestionNotFoundError,
   UnexpectedGameStageError,
 } from '../../../gameplay/domain/errors';
-import { GameSessionEvent, GameplayEvent } from '../events';
+import { CommerceEvent, GameSessionEvent, GameplayEvent } from '../events';
 import { ReviewAnswerUseCase } from './review-answer.use-case';
 import {
   FIXED_NOW,
@@ -16,6 +16,7 @@ import {
   makeRealtime,
   makeRoom,
   makeRoomRepo,
+  makeShopTimerRegistry,
   makeTeam,
   makeTeamRepo,
   makeTimerRegistry,
@@ -28,7 +29,7 @@ describe('ReviewAnswerUseCase', () => {
     makeTeam({ id: 'team-2', turnOrder: 1 }),
   ];
 
-  const build = (currentTeamId = 'team-1') => {
+  const build = (currentTeamId = 'team-1', blockedQuestionsCount = 0) => {
     const rooms = makeRoomRepo();
     const teams = makeTeamRepo();
     const cells = makeBoardCellRepo();
@@ -36,11 +37,12 @@ describe('ReviewAnswerUseCase', () => {
     const realtime = makeRealtime();
     const hostRealtime = makeHostRealtime();
     const timer = makeTimerRegistry();
+    const shopTimer = makeShopTimerRegistry();
     rooms.findById.mockResolvedValue(
       makeRoom({
         currentStage: 'ANSWER_REVIEW',
         currentTeamId,
-        blockedQuestionsCount: 0,
+        blockedQuestionsCount,
       }),
     );
     cells.findActiveByRoomId.mockResolvedValue(
@@ -68,6 +70,7 @@ describe('ReviewAnswerUseCase', () => {
       makeClock(),
       makeTransactionPort(),
       timer,
+      shopTimer,
     );
     return {
       uc,
@@ -79,6 +82,7 @@ describe('ReviewAnswerUseCase', () => {
       realtime,
       hostRealtime,
       timer,
+      shopTimer,
     };
   };
 
@@ -200,6 +204,97 @@ describe('ReviewAnswerUseCase', () => {
         expect(team.earnedScore.value).toBe(0);
         expect(team.balance.value).toBe(0);
       }
+    });
+  });
+
+  describe('shop cadence (§14.8, Stage 8.2)', () => {
+    const COMMERCE_OPENINGS: string[] = [
+      CommerceEvent.ShopOpened,
+      CommerceEvent.ShopFinalOpened,
+    ];
+
+    it('a non-threshold block returns to GAME_BOARD with no shop side effects', async () => {
+      // blocked 4 → 5: not a multiple of 6, board not exhausted.
+      const { uc, rooms, realtime, shopTimer } = build('team-1', 4);
+
+      await uc.execute({ roomId: 'room-1', accepted: true });
+
+      const updatedRoom = rooms.update.mock.calls[0][0];
+      expect(updatedRoom.currentStage).toBe('GAME_BOARD');
+      expect(updatedRoom.blockedQuestionsCount).toBe(5);
+      expect(updatedRoom.currentShopRound).toBe(0);
+
+      const emitted = realtime.emitToRoom.mock.calls.map(([, event]) => event);
+      for (const opening of COMMERCE_OPENINGS) {
+        expect(emitted).not.toContain(opening);
+      }
+      expect(shopTimer.read('room-1', FIXED_NOW).status).toBe('IDLE');
+    });
+
+    it('the 6th block enters SHOP: round 1, timer started, shop-opened LAST', async () => {
+      const { uc, rooms, realtime, shopTimer } = build('team-1', 5);
+
+      await uc.execute({ roomId: 'room-1', accepted: true });
+
+      const updatedRoom = rooms.update.mock.calls[0][0];
+      expect(updatedRoom.currentStage).toBe('SHOP');
+      expect(updatedRoom.blockedQuestionsCount).toBe(6);
+      expect(updatedRoom.currentShopRound).toBe(1);
+      // The turn still moves on a shop entry (Этап2 §16).
+      expect(updatedRoom.currentTeamId).toBe('team-2');
+
+      const state = shopTimer.read('room-1', FIXED_NOW);
+      expect(state.status).toBe('RUNNING');
+
+      // The six pre-8.2 broadcasts are all present; shop-opened is appended
+      // LAST, after board-state-updated.
+      const emitted = realtime.emitToRoom.mock.calls.map(([, event]) => event);
+      expect(emitted).toEqual([
+        GameplayEvent.AnswerAccepted,
+        GameplayEvent.ScoreChanged,
+        GameplayEvent.CellBlocked,
+        GameSessionEvent.GameTurnChanged,
+        GameplayEvent.BoardStateUpdated,
+        CommerceEvent.ShopOpened,
+      ]);
+
+      const [, , payload] =
+        realtime.emitToRoom.mock.calls[
+          realtime.emitToRoom.mock.calls.length - 1
+        ];
+      expect(payload).toEqual({
+        roomId: 'room-1',
+        currentShopRound: 1,
+        startedAt: state.startedAt,
+        endsAt: state.endsAt,
+        minClosableAt: state.minClosableAt,
+      });
+    });
+
+    it('a REJECTED review on the threshold also enters SHOP (blocked count, not correctness)', async () => {
+      const { uc, rooms, realtime } = build('team-1', 5);
+
+      await uc.execute({ roomId: 'room-1', accepted: false });
+
+      const updatedRoom = rooms.update.mock.calls[0][0];
+      expect(updatedRoom.currentStage).toBe('SHOP');
+      expect(updatedRoom.currentShopRound).toBe(1);
+      const emitted = realtime.emitToRoom.mock.calls.map(([, event]) => event);
+      expect(emitted).toContain(CommerceEvent.ShopOpened);
+      expect(emitted).not.toContain(GameplayEvent.ScoreChanged);
+    });
+
+    it('the 30th block opens the FINAL shop: shop-final-opened, not shop-opened', async () => {
+      const { uc, rooms, realtime } = build('team-1', 29);
+
+      await uc.execute({ roomId: 'room-1', accepted: true });
+
+      const updatedRoom = rooms.update.mock.calls[0][0];
+      expect(updatedRoom.currentStage).toBe('SHOP');
+      expect(updatedRoom.isBoardExhausted).toBe(true);
+      const emitted = realtime.emitToRoom.mock.calls.map(([, event]) => event);
+      expect(emitted[emitted.length - 1]).toBe(CommerceEvent.ShopFinalOpened);
+      expect(emitted).not.toContain(CommerceEvent.ShopOpened);
     });
   });
 

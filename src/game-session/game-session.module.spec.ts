@@ -1,4 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ShopQueryService } from '../commerce/application/queries';
+import {
+  PURCHASE_REPOSITORY_PORT,
+  SHOP_ITEM_REPOSITORY_PORT,
+} from '../commerce/domain/ports';
+import {
+  DrizzlePurchaseRepository,
+  DrizzleShopItemRepository,
+} from '../commerce/infrastructure/persistence';
 import { AppConfigService } from '../config/app-config.service';
 import { CLOCK_PORT } from '../core/ports/clock.port';
 import { ID_GENERATOR_PORT } from '../core/ports/id-generator.port';
@@ -28,10 +37,11 @@ import {
   RoomSnapshotAssembler,
   TimerQueryService,
 } from './application/queries';
-import { AnswerTimerRegistry } from './application/timers';
+import { AnswerTimerRegistry, ShopTimerRegistry } from './application/timers';
 import {
   AdvanceOnTimeoutUseCase,
   CloseRoomUseCase,
+  CloseShopUseCase,
   CreateRoomUseCase,
   CreateTeamUseCase,
   JoinRoomUseCase,
@@ -77,6 +87,7 @@ import {
   PlayersController,
   QuestionsController,
   RoomsController,
+  ShopController,
   TeamsController,
   TopicsController,
 } from './presentation/controllers';
@@ -90,12 +101,15 @@ import {
 
 /**
  * Verifies the DI wiring of GameSessionModule without the real
- * InfrastructureModule/RealtimeModule/GameplayModule (no PostgreSQL pool, no
- * socket server). The bindings mirror the module; boundary dependencies are
- * stubbed. Sub-stage 6.2a adds the battle use cases, the answer timer, the
- * timer query, and the Board/Questions controllers — the gameplay repository
- * ports and BoardQueryService (normally imported from GameplayModule) are bound
- * here to their Drizzle adapters / class so the graph resolves.
+ * InfrastructureModule/RealtimeModule/GameplayModule/CommerceModule (no
+ * PostgreSQL pool, no socket server). The bindings mirror the module; boundary
+ * dependencies are stubbed. Sub-stage 6.2a adds the battle use cases, the
+ * answer timer, the timer query, and the Board/Questions controllers — the
+ * gameplay repository ports and BoardQueryService (normally imported from
+ * GameplayModule) are bound here to their Drizzle adapters / class so the
+ * graph resolves. Sub-stage 8.2 adds the shop timer, CloseShop, the
+ * ShopController and the commerce-side bindings (the two repository ports
+ * ShopQueryService needs, normally imported from CommerceModule).
  */
 describe('GameSessionModule wiring', () => {
   const databaseStub = {
@@ -113,6 +127,7 @@ describe('GameSessionModule wiring', () => {
         GameController,
         BoardController,
         QuestionsController,
+        ShopController,
       ],
       providers: [
         { provide: DatabaseService, useValue: databaseStub },
@@ -143,6 +158,16 @@ describe('GameSessionModule wiring', () => {
           useClass: DrizzleBoardCellRepository,
         },
         BoardQueryService,
+        // Commerce ports + read model (normally from the imported CommerceModule).
+        {
+          provide: SHOP_ITEM_REPOSITORY_PORT,
+          useClass: DrizzleShopItemRepository,
+        },
+        {
+          provide: PURCHASE_REPOSITORY_PORT,
+          useClass: DrizzlePurchaseRepository,
+        },
+        ShopQueryService,
         CreateRoomUseCase,
         JoinRoomUseCase,
         ReconnectClientUseCase,
@@ -163,6 +188,9 @@ describe('GameSessionModule wiring', () => {
         SubmitAnswerUseCase,
         ReviewAnswerUseCase,
         AdvanceOnTimeoutUseCase,
+        // Shop flow providers (8.2), mirroring the module.
+        ShopTimerRegistry,
+        CloseShopUseCase,
         RoomSnapshotAssembler,
         LobbyQueryService,
         TimerQueryService,
@@ -270,6 +298,14 @@ describe('GameSessionModule wiring', () => {
     await moduleRef.close();
   });
 
+  it('instantiates the shop flow: timer, close use case and read model (8.2)', async () => {
+    const moduleRef = await buildModule();
+    expect(moduleRef.get(ShopTimerRegistry)).toBeInstanceOf(ShopTimerRegistry);
+    expect(moduleRef.get(CloseShopUseCase)).toBeInstanceOf(CloseShopUseCase);
+    expect(moduleRef.get(ShopQueryService)).toBeInstanceOf(ShopQueryService);
+    await moduleRef.close();
+  });
+
   it('instantiates all lobby and battle controllers', async () => {
     const moduleRef = await buildModule();
     expect(moduleRef.get(RoomsController)).toBeInstanceOf(RoomsController);
@@ -281,6 +317,7 @@ describe('GameSessionModule wiring', () => {
     expect(moduleRef.get(QuestionsController)).toBeInstanceOf(
       QuestionsController,
     );
+    expect(moduleRef.get(ShopController)).toBeInstanceOf(ShopController);
     await moduleRef.close();
   });
 });

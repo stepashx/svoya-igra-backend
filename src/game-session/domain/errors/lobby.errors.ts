@@ -237,6 +237,21 @@ export class InsufficientBalanceError extends DomainRuleError {
   }
 }
 
+/**
+ * The host tried to close the shop before its minimum open time (§14.8).
+ * Thrown only while the shop timer is RUNNING before `minClosableAt` — an
+ * IDLE or EXPIRED timer is always closable (see {@link ShopTimerRegistry}).
+ */
+export class ShopMinimumTimeNotElapsedError extends DomainRuleError {
+  readonly code = 'SHOP_MINIMUM_TIME_NOT_ELAPSED';
+
+  constructor(
+    message = 'The shop cannot close before its minimum open time elapses.',
+  ) {
+    super(message);
+  }
+}
+
 /** A mutation was attempted on a room that is not ACTIVE (closed/finished). */
 export class RoomNotActiveError extends DomainRuleError {
   readonly code = 'ROOM_NOT_ACTIVE';

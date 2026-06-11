@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DatabaseService } from '../infrastructure/database/database.service';
 import { TransactionContext } from '../infrastructure/database/transaction-context';
+import { ShopQueryService } from './application/queries';
 import {
   INVENTORY_ITEM_REPOSITORY_PORT,
   PURCHASE_REPOSITORY_PORT,
@@ -44,6 +45,8 @@ describe('CommerceModule wiring', () => {
           provide: INVENTORY_ITEM_REPOSITORY_PORT,
           useClass: DrizzleInventoryItemRepository,
         },
+        // Read model (8.2), mirroring the module.
+        ShopQueryService,
       ],
     }).compile();
 
@@ -61,6 +64,12 @@ describe('CommerceModule wiring', () => {
     expect(moduleRef.get(INVENTORY_ITEM_REPOSITORY_PORT)).toBeInstanceOf(
       DrizzleInventoryItemRepository,
     );
+    await moduleRef.close();
+  });
+
+  it('instantiates the shop read model (8.2)', async () => {
+    const moduleRef = await buildModule();
+    expect(moduleRef.get(ShopQueryService)).toBeInstanceOf(ShopQueryService);
     await moduleRef.close();
   });
 });
