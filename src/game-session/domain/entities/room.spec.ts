@@ -140,6 +140,36 @@ describe('Room', () => {
     );
   });
 
+  describe('enterShop (§14.8)', () => {
+    it('enters the shop from ANSWER_REVIEW and counts the round', () => {
+      const room = makeRoomAt('ANSWER_REVIEW');
+      room.enterShop();
+      expect(room.currentStage).toBe('SHOP');
+      expect(room.currentShopRound).toBe(1);
+    });
+
+    it('accumulates the round across two board loops', () => {
+      const room = makeRoomAt('ANSWER_REVIEW');
+      room.enterShop();
+      room.transitionTo('GAME_BOARD');
+      room.transitionTo('QUESTION_OPENED');
+      room.transitionTo('ANSWER_REVIEW');
+      room.enterShop();
+      expect(room.currentStage).toBe('SHOP');
+      expect(room.currentShopRound).toBe(2);
+    });
+
+    it.each<GameStage>(['LOBBY', 'GAME_BOARD', 'QUESTION_OPENED', 'SHOP'])(
+      'rejects entering the shop from %s and keeps the round count',
+      (stage) => {
+        const room = makeRoomAt(stage);
+        expect(() => room.enterShop()).toThrow(InvalidStageTransitionError);
+        expect(room.currentStage).toBe(stage);
+        expect(room.currentShopRound).toBe(0);
+      },
+    );
+  });
+
   it('increments the blocked-questions count after an answer review', () => {
     const room = makeRoomAt('ANSWER_REVIEW');
     expect(room.blockedQuestionsCount).toBe(0);

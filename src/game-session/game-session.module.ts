@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CommerceModule } from '../commerce/commerce.module';
 import { GameplayModule } from '../gameplay/gameplay.module';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
 import { RealtimeModule } from '../realtime/realtime.module';
@@ -48,9 +49,11 @@ import {
 import {
   BoardController,
   GameController,
+  InventoryController,
   PlayersController,
   QuestionsController,
   RoomsController,
+  ShopController,
   TeamsController,
   TopicsController,
 } from './presentation/controllers';
@@ -94,9 +97,18 @@ import {
  * {@link LobbyPresenceRegistry} (shared with the gateway), so
  * `cell-selection-requested` and the reveal-gated
  * `question-correct-answer-shown-to-host` reach only the host's live sockets.
+ *
+ * Sub-stage 8.1 imports {@link CommerceModule} for the shop seam (the four
+ * commerce repository ports, Design A — exactly as GameplayModule) and ships
+ * the Shop/Inventory 501 stubs; the shop/purchase use cases arrive in 8.2/8.3.
  */
 @Module({
-  imports: [InfrastructureModule, RealtimeModule, GameplayModule],
+  imports: [
+    InfrastructureModule,
+    RealtimeModule,
+    GameplayModule,
+    CommerceModule,
+  ],
   controllers: [
     RoomsController,
     PlayersController,
@@ -106,6 +118,9 @@ import {
     // Battle-cycle controllers (sub-stage 6.2a; Gameplay tag).
     BoardController,
     QuestionsController,
+    // Shop/inventory 501 stubs (sub-stage 8.1; Commerce tag).
+    ShopController,
+    InventoryController,
   ],
   providers: [
     // Persistence ports → Drizzle adapters.

@@ -1,4 +1,8 @@
-import { CaptainAlreadyAssignedError, InvalidScoreError } from '../errors';
+import {
+  CaptainAlreadyAssignedError,
+  InsufficientBalanceError,
+  InvalidScoreError,
+} from '../errors';
 import { Score, TeamName } from '../value-objects';
 
 /** Fields required to create a brand-new team (caller-supplied id). */
@@ -28,7 +32,8 @@ export interface TeamReconstituteProps {
  * captain link (assign-once: a second assignment throws). Keeps two scores per
  * §14.7 — `earnedScore` (final result) and `balance` (after purchases) — both as
  * non-negative {@link Score} value objects; {@link awardPoints} grows BOTH
- * together on an accepted answer, purchases (balance-only) arrive in Stage 8.
+ * together on an accepted answer, {@link debitBalance} shrinks ONLY `balance`
+ * on a purchase ({@link canAfford} is the read-side predicate).
  * `turnOrder` is a flat nullable number (its value object is deferred).
  */
 export class Team {
@@ -119,6 +124,31 @@ export class Team {
     }
     this._earnedScore = this._earnedScore.add(points);
     this._balance = this._balance.add(points);
+  }
+
+  /**
+   * Debit a §14.7 purchase from `balance` ONLY — `earnedScore` is the final
+   * result and never shrinks. Zero or fractional prices are rejected
+   * ({@link InvalidScoreError}); a price above the current balance is rejected
+   * ({@link InsufficientBalanceError}) before any mutation.
+   */
+  debitBalance(price: number): void {
+    if (!Number.isInteger(price) || price <= 0) {
+      throw new InvalidScoreError('Debited price must be a positive integer.');
+    }
+    if (this._balance.value < price) {
+      throw new InsufficientBalanceError();
+    }
+    this._balance = this._balance.subtract(price);
+  }
+
+  /**
+   * Read-side affordability predicate (no guards, no mutation): whether the
+   * current balance covers `price`. The write path re-checks inside
+   * {@link debitBalance} — this is for queries/availability views.
+   */
+  canAfford(price: number): boolean {
+    return this._balance.value >= price;
   }
 
   get id(): string {

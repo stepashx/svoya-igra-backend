@@ -50,9 +50,9 @@ identity and the state snapshot is the `ReconnectClient` use case (Stage 5B).
 
 ## Feature events
 
-Game Session names (Lobby and Game start) and the Gameplay catalog (§16.4) are
-below. Commerce, Presentation, and Evaluation rows are filled in as each feature
-lands.
+Game Session names (Lobby and Game start), the Gameplay catalog (§16.4) and the
+Commerce catalog (§16.5) are below. Presentation and Evaluation rows are filled
+in as each feature lands.
 
 **Name contract only.** This catalog fixes the canonical name, direction, area,
 and audience of each event. Payload schemas and the actual emission wiring are
@@ -246,6 +246,81 @@ keeps its existing `game-session` name — shared by §16.3/§16.4, not a second
   incoming `client:gameplay:*` commands above are the planned WS forward-path and
   are not implemented in Stage 6, exactly as `client:game-session:*` stayed
   forward-path in Stage 5.0.
+
+### Commerce — server broadcasts (§16.5)
+
+Catalog of the §16.5 "shop & inventory" broadcasts. **Name contract only** —
+the constants live in
+`src/game-session/application/events/commerce-events.ts` (next to the
+game-session use cases that will emit them, Design A), but payload schemas and
+the emission wiring are **Stages 8.2/8.3**; nothing is emitted in 8.1. The
+**Status** column records each name's disposition. Audience is a publishing
+concern (see the Audience section above), shown per row. See _Commerce
+contract notes_ below for the privacy constraint fixed now.
+
+| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+|---|---|---|---|---|---|---|
+| `server:commerce:shop-opened` | server | commerce | room | Shop opened (ANSWER_REVIEW → SHOP, every-6th-question cadence) | §16.5 | Reserved for Stage 8.2 (EnterShop) — NOT emitted in 8.1 |
+| `server:commerce:shop-final-opened` | server | commerce | room | Final shop opened (board exhausted, before presentations) | §16.5 | Reserved for Stage 8.2 — NOT emitted in 8.1 |
+| `server:commerce:shop-state-updated` | server | commerce | room | Coarse snapshot of the shop (catalog + purchased state) — WITHOUT publicUrl/QR content | §16.5 | Reserved for Stage 8.3 (first emitter is the purchase) — NOT emitted in 8.1 |
+| `server:commerce:shop-item-purchased` | server | commerce | room | A team bought an item (item + buying team; price snapshot) — WITHOUT publicUrl/QR content | §16.5 | Reserved for Stage 8.3 (Purchase) — NOT emitted in 8.1 |
+| `server:commerce:shop-item-unavailable` | server | commerce | room | An item became unavailable (purchased by another team, §14.8) | §16.5 | Reserved for Stage 8.3 (Purchase) — NOT emitted in 8.1 |
+| `server:commerce:shop-purchase-rejected` | server | commerce | captain | The captain's purchase was rejected (insufficient balance / already purchased) | §16.5 | Reserved for Stage 8.3 — may stay REST-only (no captain emitter yet, see notes) |
+| `server:commerce:inventory-updated` | server | commerce | team | The team's inventory gained the bought QR tool (publicUrl allowed HERE — team audience) | §16.5 | Reserved for Stage 8.3 (Purchase) — NOT emitted in 8.1 |
+| `server:commerce:shop-closed` | server | commerce | room | Shop closed (host action or shop timer) → back to GAME_BOARD or on to presentations | §16.5 | Reserved for Stage 8.2 (CloseShop) — NOT emitted in 8.1 |
+
+### Commerce — client commands (§16.5)
+
+Incoming commands, area `commerce`. **Forward-path only** — not wired in Stage
+8; the live mutations run over REST (§15.8 purchase/close), exactly as the
+gameplay and game-session commands stayed forward-path in their stages.
+
+| Canonical name | Direction | Area | Purpose | Emits | Sender |
+|---|---|---|---|---|---|
+| `client:commerce:purchase-item` | client | commerce | Captain buys a shop item (Purchase) | `shop-item-purchased`, `shop-item-unavailable`, `shop-state-updated`, `inventory-updated` \| `shop-purchase-rejected` | captain |
+| `client:commerce:close-shop` | client | commerce | Host closes the shop (CloseShop) | `shop-closed` | host |
+
+### Plan name → canonical name (§16.5)
+
+Same derivation as §16.1–16.4: a plan token `x:y` becomes `server:commerce:x-y`
+in kebab-case (camelCase split on case, e.g. `finalOpened` → `final-opened`,
+`itemPurchased` → `item-purchased`).
+
+| Plan name (§16.5) | Canonical name |
+|---|---|
+| `shop:opened` | `server:commerce:shop-opened` |
+| `shop:finalOpened` | `server:commerce:shop-final-opened` |
+| `shop:stateUpdated` | `server:commerce:shop-state-updated` |
+| `shop:itemPurchased` | `server:commerce:shop-item-purchased` |
+| `shop:itemUnavailable` | `server:commerce:shop-item-unavailable` |
+| `shop:purchaseRejected` | `server:commerce:shop-purchase-rejected` |
+| `inventory:updated` | `server:commerce:inventory-updated` |
+| `shop:closed` | `server:commerce:shop-closed` |
+
+### Commerce contract notes (§16.5)
+
+- **Nothing is emitted in 8.1.** Sub-stage 8.1 fixes only the
+  name / direction / area / audience contract (the constants exist, unwired).
+  The shop lifecycle events (`shop-opened`, `shop-final-opened`, `shop-closed`)
+  arrive with the 8.2 use cases; the purchase chain (`shop-item-purchased`,
+  `shop-item-unavailable`, `shop-state-updated`, `shop-purchase-rejected`,
+  `inventory-updated`) arrives with 8.3.
+- **QR privacy, fixed now.** The QR tool belongs to the buying team. Room-wide
+  payloads — `shop-item-purchased` and `shop-state-updated` in particular —
+  must NEVER carry `publicUrl` or any QR content; the tool reaches its owners
+  only through the team-audience `inventory-updated` and the team-gated
+  inventory REST reads (§15.9). Leaking a QR to the room would hand every team
+  the purchased advantage (the §16.4 `correctAnswer` secrecy precedent).
+- **"Unavailable" is purchased-state, not affordability.** `shop-item-unavailable`
+  is room-global purchased-state (§14.8: an item is unique per game).
+  Affordability is computed client-side from team balances (Этап 2 §10) — the
+  server does not broadcast per-team affordability.
+- **Team/captain delivery does not exist yet.** The transport offers
+  `emitToRoom` / `emitToClient` / `emitToHost` (6.2b) — there is no team or
+  captain emitter. Stage 8.3 either builds one over the presence registry
+  exactly like the 6.2b host adapter (`socketsForIdentity('p:<playerId>')` is
+  ready for player-scoped lookup) or keeps `shop-purchase-rejected` REST-only
+  (the captain gets the rejection as the REST error reply) — decided in 8.3.
 
 ## Stage 5.2a — what ships now
 

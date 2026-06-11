@@ -228,6 +228,15 @@ export class AlreadyOnTeamError extends DomainRuleError {
   }
 }
 
+/** The team's balance cannot cover the attempted purchase (§14.7/§14.8). */
+export class InsufficientBalanceError extends DomainRuleError {
+  readonly code = 'INSUFFICIENT_BALANCE';
+
+  constructor(message = 'Insufficient balance for this purchase.') {
+    super(message);
+  }
+}
+
 /** A mutation was attempted on a room that is not ACTIVE (closed/finished). */
 export class RoomNotActiveError extends DomainRuleError {
   readonly code = 'ROOM_NOT_ACTIVE';

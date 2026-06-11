@@ -137,6 +137,19 @@ export class Room {
     this._blockedQuestionsCount += 1;
   }
 
+  /**
+   * Enter the shop (§14.8): ANSWER_REVIEW → SHOP plus one more shop round.
+   * The transition runs FIRST — an illegal source stage throws
+   * {@link InvalidStageTransitionError} before the round counter moves, so a
+   * rejected entry never grows the count. No upper bound here: the every-6th-
+   * question cadence (and its cap) is the Stage 8.2 use-case policy, not an
+   * entity invariant.
+   */
+  enterShop(): void {
+    this.transitionTo('SHOP');
+    this._currentShopRound += 1;
+  }
+
   /** Host-initiated closure: the room leaves ACTIVE for CLOSED. */
   close(now: Date): void {
     this.assertActive();
