@@ -1,12 +1,16 @@
 import {
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   NotImplementedException,
   Param,
   Post,
   Put,
+  UseGuards,
 } from '@nestjs/common';
 import {
+  ApiHeader,
   ApiOkResponse,
   ApiOperation,
   ApiResponse,
@@ -14,12 +18,28 @@ import {
 } from '@nestjs/swagger';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import { PresentationQueryService } from '../../../presentation/application/queries';
-import { LobbyQueryService } from '../../application/queries';
-import { PresentationRequirementResponseDto } from '../dto/response';
-import { toPresentationRequirementResponse } from '../mappers';
+import {
+  LobbyQueryService,
+  TimerQueryService,
+} from '../../application/queries';
+import { StartPresentationPreparationUseCase } from '../../application/use-cases';
+import {
+  PresentationDeadlineResponseDto,
+  PresentationRequirementResponseDto,
+  PresentationSubmissionStatusResponseDto,
+} from '../dto/response';
+import {
+  CurrentHost,
+  HOST_TOKEN_HEADER,
+  HostAuthGuard,
+  HostContext,
+} from '../http';
+import {
+  toPresentationDeadlineResponse,
+  toPresentationRequirementResponse,
+  toPresentationSubmissionStatusResponse,
+} from '../mappers';
 
-const NOT_IMPLEMENTED_92 =
-  'Presentation preparation (deadline / team upload status) arrives in sub-stage 9.2.';
 const NOT_IMPLEMENTED_93 =
   'Presentation upload / replace / files arrive in sub-stage 9.3.';
 
@@ -29,11 +49,12 @@ const NOT_IMPLEMENTED_93 =
  * while the requirement/submission reads come from the presentation-exported
  * {@link PresentationQueryService}.
  *
- * Sub-stage 9.1 wires the real `GET requirements` (the global, seed-managed
- * catalog; room-existence validated for 404-consistency with the other nested
- * routes) and reserves the rest as 501 stubs: `GET deadline` /
- * `GET submissions` (9.2) and `POST upload` / `PUT upload` (replace) /
- * `GET files` (9.3). Guards land WITH the real implementations.
+ * Sub-stage 9.2 wires the preparation surface on top of the 9.1 `GET
+ * requirements`: the host opens preparation (`POST start-preparation`, the first
+ * §16.6 emitter — `preparation-started` + `timer-started`), and the public reads
+ * `GET deadline` (the {@link PresentationTimerRegistry} state) and `GET
+ * submissions` (per-team upload status, empty until 9.3). `POST upload` / `PUT
+ * upload` (replace) / `GET files` stay 501 (9.3).
  *
  * Presentation files are PUBLIC (Этап2 §10.15): a team's file is seen by the
  * host and the other teams, so these reads carry no secrecy — the opposite of
@@ -45,6 +66,8 @@ export class PresentationController {
   constructor(
     private readonly presentationQuery: PresentationQueryService,
     private readonly lobby: LobbyQueryService,
+    private readonly timers: TimerQueryService,
+    private readonly startPresentationPreparation: StartPresentationPreparationUseCase,
   ) {}
 
   @Get('requirements')
@@ -64,16 +87,42 @@ export class PresentationController {
 
   @Get('deadline')
   @ApiOperation({ summary: 'Get the preparation deadline / endsAt' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED_92 })
-  getDeadline(): never {
-    throw new NotImplementedException();
+  @ApiOkResponse({ type: PresentationDeadlineResponseDto })
+  async getDeadline(
+    @Param('code') code: string,
+  ): Promise<PresentationDeadlineResponseDto> {
+    // 404 (unknown room) is raised inside readPresentation (resolveRoom).
+    return toPresentationDeadlineResponse(
+      await this.timers.readPresentation(code),
+    );
+  }
+
+  @Post('start-preparation')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(HostAuthGuard)
+  @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
+  @ApiOperation({
+    summary: 'Start the presentation preparation timer (host only)',
+  })
+  @ApiOkResponse({ type: PresentationDeadlineResponseDto })
+  async startPreparation(
+    @CurrentHost() host: HostContext,
+  ): Promise<PresentationDeadlineResponseDto> {
+    const result = await this.startPresentationPreparation.execute({
+      roomId: host.roomId,
+    });
+    return toPresentationDeadlineResponse(result.timer);
   }
 
   @Get('submissions')
   @ApiOperation({ summary: "Get the teams' upload status" })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED_92 })
-  getSubmissions(): never {
-    throw new NotImplementedException();
+  @ApiOkResponse({ type: [PresentationSubmissionStatusResponseDto] })
+  async getSubmissions(
+    @Param('code') code: string,
+  ): Promise<PresentationSubmissionStatusResponseDto[]> {
+    const room = await this.lobby.getRoom(code);
+    const submissions = await this.presentationQuery.listSubmissions(room.id);
+    return submissions.map(toPresentationSubmissionStatusResponse);
   }
 
   @Post('upload')

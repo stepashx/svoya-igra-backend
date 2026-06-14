@@ -1,8 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { PresentationRequirement } from '../../domain/entities';
+import {
+  PresentationRequirement,
+  PresentationSubmission,
+} from '../../domain/entities';
 import {
   PRESENTATION_REQUIREMENT_REPOSITORY_PORT,
+  PRESENTATION_SUBMISSION_REPOSITORY_PORT,
   PresentationRequirementRepositoryPort,
+  PresentationSubmissionRepositoryPort,
 } from '../../domain/ports';
 
 /**
@@ -25,10 +30,20 @@ export class PresentationQueryService {
   constructor(
     @Inject(PRESENTATION_REQUIREMENT_REPOSITORY_PORT)
     private readonly requirements: PresentationRequirementRepositoryPort,
+    @Inject(PRESENTATION_SUBMISSION_REPOSITORY_PORT)
+    private readonly submissions: PresentationSubmissionRepositoryPort,
   ) {}
 
   /** The global presentation-requirements catalog, in display order (§15.10). */
   listRequirements(): Promise<PresentationRequirement[]> {
     return this.requirements.listAll();
+  }
+
+  /**
+   * The room's per-team submission facts (§15.10) for the `GET submissions`
+   * status read. Empty until a team uploads (the upload write lands in 9.3).
+   */
+  listSubmissions(roomId: string): Promise<PresentationSubmission[]> {
+    return this.submissions.findByRoomId(roomId);
   }
 }

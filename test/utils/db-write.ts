@@ -46,6 +46,23 @@ export async function presetTeamScores(
   );
 }
 
+/**
+ * Overwrite the room's current stage. Used by the 9.2 presentation suite to
+ * park a started room directly in PRESENTATION_PREPARATION without grinding the
+ * board to exhaustion (the 8.2 final-shop path already proves that route).
+ * `current_stage` is a plain text column (enum-constrained in the domain, not a
+ * PG enum type), so a raw parameterised UPDATE is safe.
+ */
+export async function setRoomStage(
+  roomId: string,
+  stage: string,
+): Promise<void> {
+  await getPool().query('UPDATE rooms SET current_stage = $2 WHERE id = $1', [
+    roomId,
+    stage,
+  ]);
+}
+
 export async function closeDbWritePool(): Promise<void> {
   if (pool) {
     await pool.end();

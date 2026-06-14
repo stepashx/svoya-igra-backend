@@ -360,18 +360,19 @@ in kebab-case (camelCase split on case, e.g. `finalOpened` → `final-opened`,
 
 Catalog of the §16.6 "presentation preparation" broadcasts. The constants live
 in `src/game-session/application/events/presentation-events.ts` (next to the
-game-session use cases that will emit them, Design A). Sub-stage 9.1 fixes the
-name / direction / area / audience contract ONLY — **no event is emitted yet**
-(mirroring 8.1 for commerce). The **Status** column records each name's
+game-session use cases that emit them, Design A). Sub-stage 9.1 fixed the name /
+direction / area / audience contract only (no emission); **sub-stage 9.2 wires
+the preparation pair** — `preparation-started` + `timer-started` fire from
+`StartPresentationPreparationUseCase`. The **Status** column records each name's
 disposition. Every row is **room-wide** (see _Presentation contract notes_ for
 why there is no secrecy here).
 
 | Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
 |---|---|---|---|---|---|---|
-| `server:presentation:preparation-started` | server | presentation | room | Preparation opened (→ PRESENTATION_PREPARATION) | §16.6 | Reserved — name/contract only (9.1); emitted 9.2 (prep/timer) |
-| `server:presentation:requirements-updated` | server | presentation | room | Requirements catalog shown/updated for preparation | §16.6 | Reserved — name/contract only (9.1); emitted 9.2 (prep/timer) |
-| `server:presentation:timer-started` | server | presentation | room | Preparation timer started (deadline/endsAt set) | §16.6 | Reserved — name/contract only (9.1); emitted 9.2 (prep/timer) |
-| `server:presentation:timer-ended` | server | presentation | room | Preparation timer elapsed | §16.6 | Reserved — name/contract only (9.1); emitted 9.2 (prep/timer) |
+| `server:presentation:preparation-started` | server | presentation | room | Preparation opened (the room is already in PRESENTATION_PREPARATION) | §16.6 | Emitted since 9.2 by StartPresentationPreparationUseCase (host `POST start-preparation`), FIRST of the pair; payload `{ roomId, stage }` (`stage` = PRESENTATION_PREPARATION) |
+| `server:presentation:requirements-updated` | server | presentation | room | Requirements catalog shown/updated for preparation | §16.6 | Reserved — the requirements catalog is static (seed-managed): read via `GET requirements`, never pushed (no emitter planned) |
+| `server:presentation:timer-started` | server | presentation | room | Preparation timer started (deadline/endsAt set) | §16.6 | Emitted since 9.2 by StartPresentationPreparationUseCase, right AFTER `preparation-started`; payload `{ roomId, startedAt, endsAt }`. A repeat start REPLACES the timer and re-emits both |
+| `server:presentation:timer-ended` | server | presentation | room | Preparation timer elapsed | §16.6 | Reserved — no server scheduler; the EXPIRED deadline surfaces lazily via `GET deadline` (the §16.4 answer-timer precedent), never pushed |
 | `server:presentation:submission-uploaded` | server | presentation | room | A team uploaded its presentation file (publicUrl allowed — file is public) | §16.6 | Reserved — name/contract only (9.1); emitted 9.3 (submissions/files) |
 | `server:presentation:submission-replaced` | server | presentation | room | A team replaced its presentation file | §16.6 | Reserved — name/contract only (9.1); emitted 9.3 (submissions/files) |
 | `server:presentation:submission-late` | server | presentation | room | An upload landed after the deadline (status LATE, late penalty applies) | §16.6 | Reserved — name/contract only (9.1); emitted 9.3 (submissions/files) |
@@ -409,13 +410,27 @@ Same derivation as §16.1–16.5: a plan token `x:y` becomes
   commerce privacy pattern here by inertia.
 - **No client commands.** There is no `client:presentation:*` command surface.
   Upload and replace are REST multipart calls (§15.10, sub-stage 9.3); the host
-  starts the preparation timer over REST (sub-stage 9.2). The broadcasts above
-  are the only presentation transport, and they are server → client only.
-- **9.1 is name/contract only.** Sub-stage 9.1 ships the skeleton — the
-  requirement read model, the submission fact, the two repositories, the
-  exported ports, and the real `GET requirements` REST read — but emits no
-  event. 9.2 wires the preparation/timer broadcasts; 9.3 wires the
-  submission/files broadcasts (exactly as 8.1 → 8.2/8.3 for commerce).
+  starts the preparation timer over REST — `POST rooms/:code/presentation/start-preparation`
+  (HostAuthGuard, 200), the REST trigger for the §16.6 pair (sub-stage 9.2). The
+  broadcasts above are the only presentation transport, server → client only.
+- **9.2 emits the preparation pair; 9.3 the submission/files chain.** Sub-stage
+  9.1 shipped the skeleton (read models, the submission fact, the two
+  repositories, the exported ports, the real `GET requirements`) and emitted
+  nothing. Sub-stage 9.2 wires `preparation-started` then `timer-started` from
+  `StartPresentationPreparationUseCase` (room-wide, public, IN-transaction) and
+  the public `GET deadline` / `GET submissions` reads. The room is ALREADY in
+  PRESENTATION_PREPARATION (the 8.2 final-shop close parked it there), so — unlike
+  CloseShop — the use case changes NO room state (no Room mutator, no
+  `rooms.update`, STAGE_FLOW untouched: the exit to PRESENTATION_DEFENSE lands in
+  Stage 10). A repeat start REPLACES the in-memory timer with fresh stamps and
+  re-emits both (clients resync, no error). 9.3 wires the submission/files
+  broadcasts (exactly as 8.1 → 8.2/8.3 for commerce).
+- **The preparation timer is in-memory, no scheduler.** Like the answer (§16.4)
+  and shop (§16.5) timers, the deadline is a lazy `ClockPort` comparison in
+  `PresentationTimerRegistry`: `GET deadline` returns RUNNING/EXPIRED/IDLE
+  against `now`, and `timer-ended` is never pushed (the EXPIRED read is the
+  signal). No DB column; state does not survive a process restart (single-node
+  MVP). `requirements-updated` is likewise never pushed — the catalog is static.
 
 ## Stage 5.2a — what ships now
 

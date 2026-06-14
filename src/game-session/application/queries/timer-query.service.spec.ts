@@ -2,6 +2,7 @@ import { RoomNotFoundError } from '../../domain/errors';
 import {
   FIXED_NOW,
   makeClock,
+  makePresentationTimerRegistry,
   makeRoom,
   makeRoomRepo,
   makeShopTimerRegistry,
@@ -10,18 +11,22 @@ import {
 import { TimerQueryService } from './timer-query.service';
 
 describe('TimerQueryService', () => {
+  const PREP_SECONDS = 600;
+
   const build = (now: Date = FIXED_NOW) => {
     const rooms = makeRoomRepo();
     const timer = makeTimerRegistry(60);
     const shopTimer = makeShopTimerRegistry(120, 30);
+    const presentationTimer = makePresentationTimerRegistry(PREP_SECONDS);
     rooms.findByCode.mockResolvedValue(makeRoom({ id: 'room-1' }));
     const service = new TimerQueryService(
       rooms,
       makeClock(now),
       timer,
       shopTimer,
+      presentationTimer,
     );
-    return { service, rooms, timer, shopTimer };
+    return { service, rooms, timer, shopTimer, presentationTimer };
   };
 
   it('projects RUNNING while the timer is active', async () => {
@@ -75,6 +80,45 @@ describe('TimerQueryService', () => {
       const { service, rooms } = build();
       rooms.findByCode.mockResolvedValue(null);
       await expect(service.readShop('ABCDEF')).rejects.toBeInstanceOf(
+        RoomNotFoundError,
+      );
+    });
+  });
+
+  describe('readPresentation (9.2)', () => {
+    it('projects the RUNNING preparation timer with its endsAt', async () => {
+      const { service, presentationTimer } = build();
+      presentationTimer.start('room-1', FIXED_NOW);
+
+      const state = await service.readPresentation('ABCDEF');
+      expect(state.status).toBe('RUNNING');
+      expect(state.endsAt).toEqual(
+        new Date(FIXED_NOW.getTime() + PREP_SECONDS * 1000),
+      );
+      expect(state.remainingMs).toBe(PREP_SECONDS * 1000);
+    });
+
+    it('projects EXPIRED once past endsAt', async () => {
+      const { service, presentationTimer } = build(
+        new Date(FIXED_NOW.getTime() + PREP_SECONDS * 1000 + 1_000),
+      );
+      presentationTimer.start('room-1', FIXED_NOW);
+      const state = await service.readPresentation('ABCDEF');
+      expect(state.status).toBe('EXPIRED');
+      expect(state.remainingMs).toBe(0);
+    });
+
+    it('projects IDLE when no preparation timer is set', async () => {
+      const { service } = build();
+      const state = await service.readPresentation('ABCDEF');
+      expect(state.status).toBe('IDLE');
+      expect(state.endsAt).toBeNull();
+    });
+
+    it('throws when the room is unknown', async () => {
+      const { service, rooms } = build();
+      rooms.findByCode.mockResolvedValue(null);
+      await expect(service.readPresentation('ABCDEF')).rejects.toBeInstanceOf(
         RoomNotFoundError,
       );
     });

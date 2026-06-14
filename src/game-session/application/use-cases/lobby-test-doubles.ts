@@ -55,7 +55,11 @@ import {
   QrToolRepositoryPort,
   ShopItemRepositoryPort,
 } from '../../../commerce/domain/ports';
-import { AnswerTimerRegistry, ShopTimerRegistry } from '../timers';
+import {
+  AnswerTimerRegistry,
+  PresentationTimerRegistry,
+  ShopTimerRegistry,
+} from '../timers';
 import {
   BoardInitializationPort,
   HostRealtimeEventsPort,
@@ -268,6 +272,14 @@ export const makeShopTimerRegistry = (
 ): ShopTimerRegistry =>
   new ShopTimerRegistry({
     timers: { shopSeconds, shopMinSeconds },
+  } as unknown as AppConfigService);
+
+/** A real PresentationTimerRegistry over a config stub (9.2; default 600s prep). */
+export const makePresentationTimerRegistry = (
+  presentationPrepSeconds = 600,
+): PresentationTimerRegistry =>
+  new PresentationTimerRegistry({
+    timers: { presentationPrepSeconds },
   } as unknown as AppConfigService);
 
 export const makeBoardCell = (

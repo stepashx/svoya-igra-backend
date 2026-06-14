@@ -14,7 +14,11 @@ import {
   RoomSnapshotAssembler,
   TimerQueryService,
 } from './application/queries';
-import { AnswerTimerRegistry, ShopTimerRegistry } from './application/timers';
+import {
+  AnswerTimerRegistry,
+  PresentationTimerRegistry,
+  ShopTimerRegistry,
+} from './application/timers';
 import {
   AdvanceOnTimeoutUseCase,
   CloseRoomUseCase,
@@ -34,6 +38,7 @@ import {
   SelectQuestionUseCase,
   SelectTopicUseCase,
   StartGameUseCase,
+  StartPresentationPreparationUseCase,
   SubmitAnswerUseCase,
   UpdateProfileUseCase,
 } from './application/use-cases';
@@ -125,6 +130,14 @@ import {
  * the real GET requirements plus the deadline/upload/replace/submissions/files
  * 501 stubs. The preparation timer, upload use case, and `server:presentation:*`
  * emission arrive in 9.2/9.3.
+ *
+ * Sub-stage 9.2 wires the preparation surface: the in-memory
+ * {@link PresentationTimerRegistry} and {@link StartPresentationPreparationUseCase}
+ * (the first §16.6 emitter — `preparation-started` + `timer-started`, room-wide
+ * and public), plus the real GET deadline / submissions reads (the submission
+ * read model comes from the imported PresentationModule). The room is already in
+ * PRESENTATION_PREPARATION (the 8.2 final-shop close parked it there), so the
+ * use case changes no room state. Upload/replace/files stay 501 until 9.3.
  */
 @Module({
   imports: [
@@ -146,7 +159,8 @@ import {
     // Shop/inventory 501 stubs (sub-stage 8.1; Commerce tag).
     ShopController,
     InventoryController,
-    // Presentation: real GET requirements + 501 stubs (sub-stage 9.1).
+    // Presentation: GET requirements (9.1) + preparation deadline/submissions
+    // reads and host start-preparation (9.2); upload/files 501 until 9.3.
     PresentationController,
   ],
   providers: [
@@ -187,6 +201,11 @@ import {
     // repository ports it needs and the InventoryQueryService come from the
     // imported CommerceModule.
     PurchaseItemUseCase,
+    // Presentation preparation (sub-stage 9.2): the in-memory preparation timer
+    // and the host start; the requirement/submission reads come from the
+    // imported PresentationModule (PresentationQueryService).
+    PresentationTimerRegistry,
+    StartPresentationPreparationUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,

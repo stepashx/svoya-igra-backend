@@ -21,3 +21,5 @@ export * from './advance-on-timeout.use-case';
 export * from './close-shop.use-case';
 // Purchases + inventory (sub-stage 8.3).
 export * from './purchase-item.use-case';
+// Presentation preparation (sub-stage 9.2).
+export * from './start-presentation-preparation.use-case';
