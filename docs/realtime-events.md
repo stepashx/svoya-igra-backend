@@ -50,9 +50,9 @@ identity and the state snapshot is the `ReconnectClient` use case (Stage 5B).
 
 ## Feature events
 
-Game Session names (Lobby and Game start), the Gameplay catalog (§16.4) and the
-Commerce catalog (§16.5) are below. Presentation and Evaluation rows are filled
-in as each feature lands.
+Game Session names (Lobby and Game start), the Gameplay catalog (§16.4), the
+Commerce catalog (§16.5) and the Presentation catalog (§16.6) are below. The
+Evaluation rows are filled in as that feature lands.
 
 **Name contract only.** This catalog fixes the canonical name, direction, area,
 and audience of each event. Payload schemas and the actual emission wiring are
@@ -355,6 +355,67 @@ in kebab-case (camelCase split on case, e.g. `finalOpened` → `final-opened`,
   `TeamMemberOrHostGuard` is correct for the membership it sees; the fix —
   gating Join/LeaveTeam to the LOBBY stage — is tracked as a separate Stage 5
   task and intentionally out of 8.3 scope.
+
+### Presentation — server broadcasts (§16.6)
+
+Catalog of the §16.6 "presentation preparation" broadcasts. The constants live
+in `src/game-session/application/events/presentation-events.ts` (next to the
+game-session use cases that will emit them, Design A). Sub-stage 9.1 fixes the
+name / direction / area / audience contract ONLY — **no event is emitted yet**
+(mirroring 8.1 for commerce). The **Status** column records each name's
+disposition. Every row is **room-wide** (see _Presentation contract notes_ for
+why there is no secrecy here).
+
+| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+|---|---|---|---|---|---|---|
+| `server:presentation:preparation-started` | server | presentation | room | Preparation opened (→ PRESENTATION_PREPARATION) | §16.6 | Reserved — name/contract only (9.1); emitted 9.2 (prep/timer) |
+| `server:presentation:requirements-updated` | server | presentation | room | Requirements catalog shown/updated for preparation | §16.6 | Reserved — name/contract only (9.1); emitted 9.2 (prep/timer) |
+| `server:presentation:timer-started` | server | presentation | room | Preparation timer started (deadline/endsAt set) | §16.6 | Reserved — name/contract only (9.1); emitted 9.2 (prep/timer) |
+| `server:presentation:timer-ended` | server | presentation | room | Preparation timer elapsed | §16.6 | Reserved — name/contract only (9.1); emitted 9.2 (prep/timer) |
+| `server:presentation:submission-uploaded` | server | presentation | room | A team uploaded its presentation file (publicUrl allowed — file is public) | §16.6 | Reserved — name/contract only (9.1); emitted 9.3 (submissions/files) |
+| `server:presentation:submission-replaced` | server | presentation | room | A team replaced its presentation file | §16.6 | Reserved — name/contract only (9.1); emitted 9.3 (submissions/files) |
+| `server:presentation:submission-late` | server | presentation | room | An upload landed after the deadline (status LATE, late penalty applies) | §16.6 | Reserved — name/contract only (9.1); emitted 9.3 (submissions/files) |
+| `server:presentation:submission-status-changed` | server | presentation | room | A submission's status changed (UPLOADED ⟷ LATE bookkeeping) | §16.6 | Reserved — name/contract only (9.1); emitted 9.3 (submissions/files) |
+| `server:presentation:files-updated` | server | presentation | room | The room's presentation file list changed (public links) | §16.6 | Reserved — name/contract only (9.1); emitted 9.3 (submissions/files) |
+
+### Plan name → canonical name (§16.6)
+
+Same derivation as §16.1–16.5: a plan token `x:y` becomes
+`server:presentation:x-y` in kebab-case (camelCase split on case, e.g.
+`preparationStarted` → `preparation-started`, `submissionStatusChanged` →
+`submission-status-changed`).
+
+| Plan name (§16.6) | Canonical name |
+|---|---|
+| `presentation:preparationStarted` | `server:presentation:preparation-started` |
+| `presentation:requirementsUpdated` | `server:presentation:requirements-updated` |
+| `presentation:timerStarted` | `server:presentation:timer-started` |
+| `presentation:timerEnded` | `server:presentation:timer-ended` |
+| `presentation:submissionUploaded` | `server:presentation:submission-uploaded` |
+| `presentation:submissionReplaced` | `server:presentation:submission-replaced` |
+| `presentation:submissionLate` | `server:presentation:submission-late` |
+| `presentation:submissionStatusChanged` | `server:presentation:submission-status-changed` |
+| `presentation:filesUpdated` | `server:presentation:files-updated` |
+
+### Presentation contract notes (§16.6)
+
+- **Presentation files are PUBLIC — the deliberate OPPOSITE of the §16.5 QR
+  secrecy.** Per Этап2 §10.15, a team's uploaded file is seen by the host AND
+  the other teams. So presentation payloads MAY carry a file's `publicUrl`
+  room-wide, every one of the nine events is room-audience, and there is
+  **nothing to hide**. Sub-stage 9.3 therefore does NOT apply the §16.5 R3-style
+  team-gating to these events — that gating exists only to keep a purchased QR
+  secret, and a public presentation file has no such secret. Do not copy the
+  commerce privacy pattern here by inertia.
+- **No client commands.** There is no `client:presentation:*` command surface.
+  Upload and replace are REST multipart calls (§15.10, sub-stage 9.3); the host
+  starts the preparation timer over REST (sub-stage 9.2). The broadcasts above
+  are the only presentation transport, and they are server → client only.
+- **9.1 is name/contract only.** Sub-stage 9.1 ships the skeleton — the
+  requirement read model, the submission fact, the two repositories, the
+  exported ports, and the real `GET requirements` REST read — but emits no
+  event. 9.2 wires the preparation/timer broadcasts; 9.3 wires the
+  submission/files broadcasts (exactly as 8.1 → 8.2/8.3 for commerce).
 
 ## Stage 5.2a — what ships now
 

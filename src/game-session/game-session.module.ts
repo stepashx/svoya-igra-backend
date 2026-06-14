@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { CommerceModule } from '../commerce/commerce.module';
 import { GameplayModule } from '../gameplay/gameplay.module';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
+import { PresentationModule } from '../presentation/presentation.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import {
   HOST_REALTIME_EVENTS_PORT,
@@ -54,6 +55,7 @@ import {
   GameController,
   InventoryController,
   PlayersController,
+  PresentationController,
   QuestionsController,
   RoomsController,
   ShopController,
@@ -116,6 +118,13 @@ import {
  * {@link CloseShopUseCase}, and the real shop items/round/close endpoints —
  * the catalog read model (ShopQueryService) comes from the imported
  * {@link CommerceModule}. Purchases stay 501 until 8.3.
+ *
+ * Sub-stage 9.1 imports {@link PresentationModule} for the presentation seam
+ * (the two presentation repository ports + the requirements read model, Design
+ * A — exactly as CommerceModule) and ships the {@link PresentationController}:
+ * the real GET requirements plus the deadline/upload/replace/submissions/files
+ * 501 stubs. The preparation timer, upload use case, and `server:presentation:*`
+ * emission arrive in 9.2/9.3.
  */
 @Module({
   imports: [
@@ -123,6 +132,7 @@ import {
     RealtimeModule,
     GameplayModule,
     CommerceModule,
+    PresentationModule,
   ],
   controllers: [
     RoomsController,
@@ -136,6 +146,8 @@ import {
     // Shop/inventory 501 stubs (sub-stage 8.1; Commerce tag).
     ShopController,
     InventoryController,
+    // Presentation: real GET requirements + 501 stubs (sub-stage 9.1).
+    PresentationController,
   ],
   providers: [
     // Persistence ports → Drizzle adapters.
