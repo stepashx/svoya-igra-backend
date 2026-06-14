@@ -81,7 +81,11 @@ export const shopItemSchema = z
     id: uuid,
     title: nonEmpty,
     description,
-    price: z.number().int().nonnegative(),
+    // Strictly positive: Team.debitBalance rejects a zero/negative price (the
+    // mirror of awardPoints), so a free item would be unbuyable — fail the seed
+    // loudly instead. Zod validation of the seed file only; not a DB schema
+    // change (db:generate stays "No schema changes").
+    price: z.number().int().positive(),
     qr_tool_id: uuid,
   })
   .strict();

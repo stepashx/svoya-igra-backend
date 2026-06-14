@@ -39,10 +39,27 @@ import {
   Score,
   TeamName,
 } from '../../domain/value-objects';
-import { AnswerTimerRegistry } from '../timers';
+import {
+  InventoryItem,
+  InventoryItemReconstituteProps,
+  Purchase,
+  PurchaseReconstituteProps,
+  QrTool,
+  QrToolReconstituteProps,
+  ShopItem,
+  ShopItemReconstituteProps,
+} from '../../../commerce/domain/entities';
+import {
+  InventoryItemRepositoryPort,
+  PurchaseRepositoryPort,
+  QrToolRepositoryPort,
+  ShopItemRepositoryPort,
+} from '../../../commerce/domain/ports';
+import { AnswerTimerRegistry, ShopTimerRegistry } from '../timers';
 import {
   BoardInitializationPort,
   HostRealtimeEventsPort,
+  TeamRealtimeEventsPort,
   TransactionPort,
 } from '../ports';
 
@@ -244,6 +261,15 @@ export const makeTimerRegistry = (answerSeconds = 60): AnswerTimerRegistry =>
     timers: { answerSeconds },
   } as unknown as AppConfigService);
 
+/** A real ShopTimerRegistry over a config stub (8.2; 120s window, 30s min). */
+export const makeShopTimerRegistry = (
+  shopSeconds = 120,
+  shopMinSeconds = 30,
+): ShopTimerRegistry =>
+  new ShopTimerRegistry({
+    timers: { shopSeconds, shopMinSeconds },
+  } as unknown as AppConfigService);
+
 export const makeBoardCell = (
   overrides: Partial<BoardCellReconstituteProps> = {},
 ): BoardCell =>
@@ -282,5 +308,88 @@ export const makeCategory = (
     id: 'category-1',
     title: 'Geography',
     position: 0,
+    ...overrides,
+  });
+
+/* -------------------------------------------------------------------------- */
+/* Commerce test doubles (sub-stage 8.3 purchase/inventory).                  */
+/* -------------------------------------------------------------------------- */
+
+export const makeShopItemRepo = (): jest.Mocked<ShopItemRepositoryPort> => ({
+  listAll: jest.fn().mockResolvedValue([]),
+  findById: jest.fn().mockResolvedValue(null),
+});
+
+export const makeQrToolRepo = (): jest.Mocked<QrToolRepositoryPort> => ({
+  findById: jest.fn().mockResolvedValue(null),
+  listByIds: jest.fn().mockResolvedValue([]),
+});
+
+export const makePurchaseRepo = (): jest.Mocked<PurchaseRepositoryPort> => ({
+  create: jest.fn().mockResolvedValue(undefined),
+  listByRoomId: jest.fn().mockResolvedValue([]),
+  existsByRoomAndShopItem: jest.fn().mockResolvedValue(false),
+});
+
+export const makeInventoryRepo =
+  (): jest.Mocked<InventoryItemRepositoryPort> => ({
+    create: jest.fn().mockResolvedValue(undefined),
+    listByRoomAndTeam: jest.fn().mockResolvedValue([]),
+    listByRoomId: jest.fn().mockResolvedValue([]),
+  });
+
+export const makeTeamRealtime = (): jest.Mocked<TeamRealtimeEventsPort> => ({
+  emitToTeam: jest.fn().mockResolvedValue(undefined),
+});
+
+export const makeShopItem = (
+  overrides: Partial<ShopItemReconstituteProps> = {},
+): ShopItem =>
+  ShopItem.reconstitute({
+    id: 'shop-item-1',
+    title: 'Товар 1',
+    description: 'Описание товара 1',
+    price: 100,
+    qrToolId: 'qr-1',
+    createdAt: FIXED_NOW,
+    ...overrides,
+  });
+
+export const makeQrTool = (
+  overrides: Partial<QrToolReconstituteProps> = {},
+): QrTool =>
+  QrTool.reconstitute({
+    id: 'qr-1',
+    title: 'QR-инструмент 1',
+    description: 'Описание QR-инструмента 1',
+    fileFormat: 'SVG',
+    publicUrl: 'https://cdn.example/qr/qr-1.svg',
+    createdAt: FIXED_NOW,
+    ...overrides,
+  });
+
+export const makePurchase = (
+  overrides: Partial<PurchaseReconstituteProps> = {},
+): Purchase =>
+  Purchase.reconstitute({
+    id: 'purchase-1',
+    roomId: 'room-1',
+    teamId: 'team-1',
+    shopItemId: 'shop-item-1',
+    price: 100,
+    purchasedAt: FIXED_NOW,
+    ...overrides,
+  });
+
+export const makeInventoryItem = (
+  overrides: Partial<InventoryItemReconstituteProps> = {},
+): InventoryItem =>
+  InventoryItem.reconstitute({
+    id: 'inventory-1',
+    roomId: 'room-1',
+    teamId: 'team-1',
+    shopItemId: 'shop-item-1',
+    qrToolId: 'qr-1',
+    addedAt: FIXED_NOW,
     ...overrides,
   });

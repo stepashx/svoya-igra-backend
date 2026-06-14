@@ -14,8 +14,9 @@ const DEFAULT_TOTAL_QUESTIONS = 30;
  * it may advance to; a transition is legal iff the target is in that set. The
  * lobby path (LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD) is linear; the
  * board loop branches — ANSWER_REVIEW returns to GAME_BOARD or enters SHOP, and
- * SHOP returns to GAME_BOARD. Later edges (presentation, evaluation, field
- * exhaustion) arrive with their sub-stages.
+ * SHOP returns to GAME_BOARD or, once the board is exhausted, moves on to
+ * PRESENTATION_PREPARATION (the final shop, 8.2). Later edges (presentation
+ * flow, evaluation) arrive with their sub-stages.
  */
 const STAGE_FLOW: Readonly<Partial<Record<GameStage, readonly GameStage[]>>> = {
   LOBBY: ['TEAM_SETUP'],
@@ -24,7 +25,7 @@ const STAGE_FLOW: Readonly<Partial<Record<GameStage, readonly GameStage[]>>> = {
   GAME_BOARD: ['QUESTION_OPENED'],
   QUESTION_OPENED: ['ANSWER_REVIEW'],
   ANSWER_REVIEW: ['GAME_BOARD', 'SHOP'],
-  SHOP: ['GAME_BOARD'],
+  SHOP: ['GAME_BOARD', 'PRESENTATION_PREPARATION'],
 };
 
 /** Fields required to start a brand-new room (caller-supplied id and identity). */
@@ -137,6 +138,37 @@ export class Room {
     this._blockedQuestionsCount += 1;
   }
 
+  /**
+   * Enter the shop (§14.8): ANSWER_REVIEW → SHOP plus one more shop round.
+   * The transition runs FIRST — an illegal source stage throws
+   * {@link InvalidStageTransitionError} before the round counter moves, so a
+   * rejected entry never grows the count. No upper bound here: the every-6th-
+   * question cadence (and its cap) is the Stage 8.2 use-case policy, not an
+   * entity invariant.
+   */
+  enterShop(): void {
+    this.transitionTo('SHOP');
+    this._currentShopRound += 1;
+  }
+
+  /**
+   * Leave the shop for the next board loop (§14.8): SHOP → GAME_BOARD. A thin
+   * mutator with no exhaustion guard — WHICH exit applies (regular vs final)
+   * is the CloseShop use-case policy, decided from {@link isBoardExhausted}.
+   */
+  exitShop(): void {
+    this.transitionTo('GAME_BOARD');
+  }
+
+  /**
+   * Leave the FINAL shop for the presentation phase (§14.8): SHOP →
+   * PRESENTATION_PREPARATION. Thin like {@link exitShop} — finality is never
+   * stored, it is derived ({@link isBoardExhausted}) and chosen by CloseShop.
+   */
+  finalizeShop(): void {
+    this.transitionTo('PRESENTATION_PREPARATION');
+  }
+
   /** Host-initiated closure: the room leaves ACTIVE for CLOSED. */
   close(now: Date): void {
     this.assertActive();
@@ -198,6 +230,16 @@ export class Room {
 
   get blockedQuestionsCount(): number {
     return this._blockedQuestionsCount;
+  }
+
+  /**
+   * Whether every board cell is blocked (§14.8) — derived from the two
+   * persisted counters, never stored itself. Drives the FINAL shop: the 8.2
+   * use cases pick `shop-final-opened` over `shop-opened` and
+   * {@link finalizeShop} over {@link exitShop} off this flag.
+   */
+  get isBoardExhausted(): boolean {
+    return this._blockedQuestionsCount >= this._totalQuestionsCount;
   }
 
   get currentShopRound(): number {

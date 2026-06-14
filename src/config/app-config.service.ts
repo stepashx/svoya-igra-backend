@@ -77,6 +77,7 @@ export class AppConfigService {
     return {
       answerSeconds: this.get('ANSWER_TIMER_SECONDS'),
       shopSeconds: this.get('SHOP_TIMER_SECONDS'),
+      shopMinSeconds: this.get('SHOP_MIN_SECONDS'),
       presentationPrepSeconds: this.get('PRESENTATION_PREP_SECONDS'),
     };
   }

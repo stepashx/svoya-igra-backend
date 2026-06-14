@@ -6,3 +6,6 @@ export * from './game.controller';
 // Battle-cycle controllers (sub-stage 6.2a) — Gameplay tag, game-session owned.
 export * from './board.controller';
 export * from './questions.controller';
+// Shop/inventory 501 stubs (sub-stage 8.1) — Commerce tag, game-session owned.
+export * from './shop.controller';
+export * from './inventory.controller';

@@ -74,9 +74,10 @@ export class NotActiveTeamCaptainError extends ForbiddenError {
 /* -------------------------------------------------------------------------- */
 
 /**
- * A combat action was attempted while the room was in the wrong stage (e.g.
- * selecting a cell outside GAME_BOARD, or submitting outside QUESTION_OPENED).
- * Thrown by the combat use cases (6.2) before they touch any board state.
+ * A stage-gated action was attempted while the room was in the wrong stage
+ * (e.g. selecting a cell outside GAME_BOARD, submitting outside
+ * QUESTION_OPENED, or closing the shop outside SHOP). Thrown by the combat
+ * use cases (6.2) and the shop close (8.2) before they touch any state.
  */
 export class UnexpectedGameStageError extends DomainRuleError {
   readonly code = 'UNEXPECTED_GAME_STAGE';

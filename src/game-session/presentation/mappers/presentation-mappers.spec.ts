@@ -1,4 +1,7 @@
+import { ShopItem } from '../../../commerce/domain/entities';
+import { ShopTimerState } from '../../application/timers';
 import {
+  FIXED_NOW,
   makePlayer,
   makeRoom,
   makeTeam,
@@ -10,6 +13,9 @@ import {
   toPlayerResponse,
   toRoomResponse,
   toRoomStateResponse,
+  toShopItemResponse,
+  toShopRoundResponse,
+  toShopTimerResponse,
   toTeamResponse,
   toTopicResponse,
 } from './index';
@@ -64,5 +70,95 @@ describe('presentation mappers', () => {
     expect(state.players).toHaveLength(2);
     expect(state.teams).toHaveLength(1);
     expect(state.room.code).toBe('ABCDEF');
+  });
+
+  describe('shop mappers (8.2)', () => {
+    const runningTimer: ShopTimerState = {
+      status: 'RUNNING',
+      startedAt: new Date('2026-06-10T12:00:00.000Z'),
+      endsAt: new Date('2026-06-10T12:02:00.000Z'),
+      minClosableAt: new Date('2026-06-10T12:00:30.000Z'),
+      remainingMs: 120_000,
+      closable: false,
+    };
+
+    it('maps a catalog entry with its availability, qrToolId only (no URL)', () => {
+      const dto = toShopItemResponse({
+        item: ShopItem.reconstitute({
+          id: 'item-1',
+          title: 'Товар 1',
+          description: 'Описание',
+          price: 100,
+          qrToolId: 'qr-1',
+          createdAt: FIXED_NOW,
+        }),
+        available: false,
+      });
+      expect(dto).toEqual({
+        id: 'item-1',
+        title: 'Товар 1',
+        description: 'Описание',
+        price: 100,
+        qrToolId: 'qr-1',
+        available: false,
+      });
+      expect(dto).not.toHaveProperty('publicUrl');
+    });
+
+    it('renders RUNNING shop-timer stamps as ISO strings with closable', () => {
+      expect(toShopTimerResponse(runningTimer)).toEqual({
+        status: 'RUNNING',
+        startedAt: '2026-06-10T12:00:00.000Z',
+        endsAt: '2026-06-10T12:02:00.000Z',
+        minClosableAt: '2026-06-10T12:00:30.000Z',
+        remainingMs: 120_000,
+        closable: false,
+      });
+    });
+
+    it('renders IDLE shop timer with null stamps and closable true', () => {
+      expect(
+        toShopTimerResponse({
+          status: 'IDLE',
+          startedAt: null,
+          endsAt: null,
+          minClosableAt: null,
+          remainingMs: 0,
+          closable: true,
+        }),
+      ).toEqual({
+        status: 'IDLE',
+        startedAt: null,
+        endsAt: null,
+        minClosableAt: null,
+        remainingMs: 0,
+        closable: true,
+      });
+    });
+
+    it('maps the shop round with derived finality', () => {
+      const regular = toShopRoundResponse(
+        makeRoom({
+          currentStage: 'SHOP',
+          blockedQuestionsCount: 6,
+          currentShopRound: 1,
+        }),
+        runningTimer,
+      );
+      expect(regular.currentShopRound).toBe(1);
+      expect(regular.currentStage).toBe('SHOP');
+      expect(regular.isFinalShop).toBe(false);
+      expect(regular.timer.status).toBe('RUNNING');
+
+      const final = toShopRoundResponse(
+        makeRoom({
+          currentStage: 'SHOP',
+          blockedQuestionsCount: 30,
+          currentShopRound: 5,
+        }),
+        runningTimer,
+      );
+      expect(final.isFinalShop).toBe(true);
+    });
   });
 });

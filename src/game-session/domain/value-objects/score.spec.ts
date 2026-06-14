@@ -45,4 +45,34 @@ describe('Score', () => {
       expect(() => Score.create(100).add(1.5)).toThrow(InvalidScoreError);
     });
   });
+
+  describe('subtract (§14.7 purchase arithmetic)', () => {
+    it('subtracts the amount into a new Score', () => {
+      expect(Score.create(300).subtract(100).value).toBe(200);
+    });
+
+    it('is immutable: the original keeps its value, the result is a new instance', () => {
+      const original = Score.create(300);
+      const shrunk = original.subtract(100);
+      expect(original.value).toBe(300);
+      expect(shrunk).not.toBe(original);
+      expect(shrunk.value).toBe(200);
+    });
+
+    it('allows a zero amount (neutral arithmetic)', () => {
+      expect(Score.create(100).subtract(0).value).toBe(100);
+    });
+
+    it('rejects a negative amount', () => {
+      expect(() => Score.create(100).subtract(-1)).toThrow(InvalidScoreError);
+    });
+
+    it('rejects a non-integer amount', () => {
+      expect(() => Score.create(100).subtract(1.5)).toThrow(InvalidScoreError);
+    });
+
+    it('rejects a subtraction below zero (non-negative invariant)', () => {
+      expect(() => Score.create(100).subtract(101)).toThrow(InvalidScoreError);
+    });
+  });
 });

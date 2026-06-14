@@ -2,9 +2,10 @@ import { InvalidScoreError } from '../errors';
 
 /**
  * A non-negative integer score, used for both `earnedScore` and `balance`.
- * Guards the invariant (integer, ≥ 0) and carries the §14.7 scoring addition:
- * {@link add} returns a NEW Score increased by a non-negative integer amount.
- * Subtraction (purchases §14.7) arrives with the Stage 8 `DebitBalance`.
+ * Guards the invariant (integer, ≥ 0) and carries the §14.7 scoring
+ * arithmetic: {@link add} returns a NEW Score increased by a non-negative
+ * integer amount; {@link subtract} returns a NEW Score decreased by one
+ * (purchases §14.7 — the result must stay ≥ 0).
  */
 export class Score {
   private constructor(private readonly _value: number) {}
@@ -35,6 +36,23 @@ export class Score {
       throw new InvalidScoreError('Score amount must not be negative.');
     }
     return Score.create(this._value + amount);
+  }
+
+  /**
+   * Immutable subtraction: a new Score shrunk by `amount` (integer, ≥ 0 — a
+   * zero amount is neutral arithmetic; forbidding zero DEBITS is a Team-level
+   * rule). Pure arithmetic on the non-negative invariant: a result below zero
+   * is rejected by {@link create} as an {@link InvalidScoreError} — checking
+   * affordability first is a Team-level concern ({@link Team.debitBalance}).
+   */
+  subtract(amount: number): Score {
+    if (!Number.isInteger(amount)) {
+      throw new InvalidScoreError('Score amount must be an integer.');
+    }
+    if (amount < 0) {
+      throw new InvalidScoreError('Score amount must not be negative.');
+    }
+    return Score.create(this._value - amount);
   }
 
   get value(): number {

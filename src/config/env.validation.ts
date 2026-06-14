@@ -50,6 +50,9 @@ export const envSchema = z.object({
   // Timers (seconds)
   ANSWER_TIMER_SECONDS: z.coerce.number().int().positive().default(60),
   SHOP_TIMER_SECONDS: z.coerce.number().int().positive().default(120),
+  // positive(), NOT nonnegative(): an empty string coerces to 0 and would
+  // silently disable the shop minimum — better to refuse to boot.
+  SHOP_MIN_SECONDS: z.coerce.number().int().positive().default(30),
   PRESENTATION_PREP_SECONDS: z.coerce.number().int().positive().default(600),
 
   // Game limits

@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { CommerceModule } from '../commerce/commerce.module';
 import { GameplayModule } from '../gameplay/gameplay.module';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import {
   HOST_REALTIME_EVENTS_PORT,
+  TEAM_REALTIME_EVENTS_PORT,
   TRANSACTION_PORT,
 } from './application/ports';
 import {
@@ -11,10 +13,11 @@ import {
   RoomSnapshotAssembler,
   TimerQueryService,
 } from './application/queries';
-import { AnswerTimerRegistry } from './application/timers';
+import { AnswerTimerRegistry, ShopTimerRegistry } from './application/timers';
 import {
   AdvanceOnTimeoutUseCase,
   CloseRoomUseCase,
+  CloseShopUseCase,
   CreateRoomUseCase,
   CreateTeamUseCase,
   JoinRoomUseCase,
@@ -23,6 +26,7 @@ import {
   MarkClientDisconnectedUseCase,
   MarkTeamReadyUseCase,
   OpenQuestionUseCase,
+  PurchaseItemUseCase,
   ReconnectClientUseCase,
   RejectSelectionUseCase,
   ReviewAnswerUseCase,
@@ -48,17 +52,24 @@ import {
 import {
   BoardController,
   GameController,
+  InventoryController,
   PlayersController,
   QuestionsController,
   RoomsController,
+  ShopController,
   TeamsController,
   TopicsController,
 } from './presentation/controllers';
-import { HostAuthGuard, PlayerIdentityGuard } from './presentation/http';
+import {
+  HostAuthGuard,
+  PlayerIdentityGuard,
+  TeamMemberOrHostGuard,
+} from './presentation/http';
 import {
   GameSessionGateway,
   LobbyPresenceRegistry,
   PresenceHostRealtimeEventsAdapter,
+  PresenceTeamRealtimeEventsAdapter,
   SocketIdentityResolver,
 } from './presentation/ws';
 
@@ -94,9 +105,25 @@ import {
  * {@link LobbyPresenceRegistry} (shared with the gateway), so
  * `cell-selection-requested` and the reveal-gated
  * `question-correct-answer-shown-to-host` reach only the host's live sockets.
+ *
+ * Sub-stage 8.1 imports {@link CommerceModule} for the shop seam (the four
+ * commerce repository ports, Design A — exactly as GameplayModule) and ships
+ * the Shop/Inventory 501 stubs; the shop/purchase use cases arrive in 8.2/8.3.
+ *
+ * Sub-stage 8.2 wires the shop lifecycle: the every-6th cadence branch in
+ * {@link ReviewAnswerUseCase} (emitting `shop-opened`/`shop-final-opened`),
+ * the in-memory {@link ShopTimerRegistry} with its minimum-open window,
+ * {@link CloseShopUseCase}, and the real shop items/round/close endpoints —
+ * the catalog read model (ShopQueryService) comes from the imported
+ * {@link CommerceModule}. Purchases stay 501 until 8.3.
  */
 @Module({
-  imports: [InfrastructureModule, RealtimeModule, GameplayModule],
+  imports: [
+    InfrastructureModule,
+    RealtimeModule,
+    GameplayModule,
+    CommerceModule,
+  ],
   controllers: [
     RoomsController,
     PlayersController,
@@ -106,6 +133,9 @@ import {
     // Battle-cycle controllers (sub-stage 6.2a; Gameplay tag).
     BoardController,
     QuestionsController,
+    // Shop/inventory 501 stubs (sub-stage 8.1; Commerce tag).
+    ShopController,
+    InventoryController,
   ],
   providers: [
     // Persistence ports → Drizzle adapters.
@@ -137,6 +167,14 @@ import {
     SubmitAnswerUseCase,
     ReviewAnswerUseCase,
     AdvanceOnTimeoutUseCase,
+    // Shop flow (sub-stage 8.2): the shop timer and the host close; the
+    // catalog read model (ShopQueryService) comes from CommerceModule.
+    ShopTimerRegistry,
+    CloseShopUseCase,
+    // Purchases + inventory (sub-stage 8.3): the captain buy; the commerce
+    // repository ports it needs and the InventoryQueryService come from the
+    // imported CommerceModule.
+    PurchaseItemUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,
@@ -144,6 +182,8 @@ import {
     // Route guards.
     HostAuthGuard,
     PlayerIdentityGuard,
+    // Inventory read authz (8.3): team member OR room host.
+    TeamMemberOrHostGuard,
     // WebSocket presence/reconnect (5.2b): a second gateway on the shared io
     // server plus its in-memory presence registry and token→identity resolver.
     GameSessionGateway,
@@ -155,6 +195,14 @@ import {
     {
       provide: HOST_REALTIME_EVENTS_PORT,
       useExisting: PresenceHostRealtimeEventsAdapter,
+    },
+    // Team-socket delivery (8.3): presence reverse-lookup over the team roster
+    // behind the application-level team-events port — the only channel allowed
+    // to carry the QR publicUrl (`inventory-updated`, after commit).
+    PresenceTeamRealtimeEventsAdapter,
+    {
+      provide: TEAM_REALTIME_EVENTS_PORT,
+      useExisting: PresenceTeamRealtimeEventsAdapter,
     },
   ],
 })

@@ -1,4 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import {
+  InventoryQueryService,
+  ShopQueryService,
+} from '../commerce/application/queries';
+import {
+  INVENTORY_ITEM_REPOSITORY_PORT,
+  PURCHASE_REPOSITORY_PORT,
+  QR_TOOL_REPOSITORY_PORT,
+  SHOP_ITEM_REPOSITORY_PORT,
+} from '../commerce/domain/ports';
+import {
+  DrizzleInventoryItemRepository,
+  DrizzlePurchaseRepository,
+  DrizzleQrToolRepository,
+  DrizzleShopItemRepository,
+} from '../commerce/infrastructure/persistence';
 import { AppConfigService } from '../config/app-config.service';
 import { CLOCK_PORT } from '../core/ports/clock.port';
 import { ID_GENERATOR_PORT } from '../core/ports/id-generator.port';
@@ -21,6 +37,7 @@ import { TransactionContext } from '../infrastructure/database/transaction-conte
 import {
   BOARD_INITIALIZATION_PORT,
   HOST_REALTIME_EVENTS_PORT,
+  TEAM_REALTIME_EVENTS_PORT,
   TRANSACTION_PORT,
 } from './application/ports';
 import {
@@ -28,10 +45,11 @@ import {
   RoomSnapshotAssembler,
   TimerQueryService,
 } from './application/queries';
-import { AnswerTimerRegistry } from './application/timers';
+import { AnswerTimerRegistry, ShopTimerRegistry } from './application/timers';
 import {
   AdvanceOnTimeoutUseCase,
   CloseRoomUseCase,
+  CloseShopUseCase,
   CreateRoomUseCase,
   CreateTeamUseCase,
   JoinRoomUseCase,
@@ -40,6 +58,7 @@ import {
   MarkClientDisconnectedUseCase,
   MarkTeamReadyUseCase,
   OpenQuestionUseCase,
+  PurchaseItemUseCase,
   ReconnectClientUseCase,
   RejectSelectionUseCase,
   ReviewAnswerUseCase,
@@ -74,28 +93,38 @@ import {
 import {
   BoardController,
   GameController,
+  InventoryController,
   PlayersController,
   QuestionsController,
   RoomsController,
+  ShopController,
   TeamsController,
   TopicsController,
 } from './presentation/controllers';
-import { HostAuthGuard, PlayerIdentityGuard } from './presentation/http';
+import {
+  HostAuthGuard,
+  PlayerIdentityGuard,
+  TeamMemberOrHostGuard,
+} from './presentation/http';
 import {
   GameSessionGateway,
   LobbyPresenceRegistry,
   PresenceHostRealtimeEventsAdapter,
+  PresenceTeamRealtimeEventsAdapter,
   SocketIdentityResolver,
 } from './presentation/ws';
 
 /**
  * Verifies the DI wiring of GameSessionModule without the real
- * InfrastructureModule/RealtimeModule/GameplayModule (no PostgreSQL pool, no
- * socket server). The bindings mirror the module; boundary dependencies are
- * stubbed. Sub-stage 6.2a adds the battle use cases, the answer timer, the
- * timer query, and the Board/Questions controllers — the gameplay repository
- * ports and BoardQueryService (normally imported from GameplayModule) are bound
- * here to their Drizzle adapters / class so the graph resolves.
+ * InfrastructureModule/RealtimeModule/GameplayModule/CommerceModule (no
+ * PostgreSQL pool, no socket server). The bindings mirror the module; boundary
+ * dependencies are stubbed. Sub-stage 6.2a adds the battle use cases, the
+ * answer timer, the timer query, and the Board/Questions controllers — the
+ * gameplay repository ports and BoardQueryService (normally imported from
+ * GameplayModule) are bound here to their Drizzle adapters / class so the
+ * graph resolves. Sub-stage 8.2 adds the shop timer, CloseShop, the
+ * ShopController and the commerce-side bindings (the two repository ports
+ * ShopQueryService needs, normally imported from CommerceModule).
  */
 describe('GameSessionModule wiring', () => {
   const databaseStub = {
@@ -113,6 +142,8 @@ describe('GameSessionModule wiring', () => {
         GameController,
         BoardController,
         QuestionsController,
+        ShopController,
+        InventoryController,
       ],
       providers: [
         { provide: DatabaseService, useValue: databaseStub },
@@ -143,6 +174,25 @@ describe('GameSessionModule wiring', () => {
           useClass: DrizzleBoardCellRepository,
         },
         BoardQueryService,
+        // Commerce ports + read models (normally from the imported CommerceModule).
+        {
+          provide: SHOP_ITEM_REPOSITORY_PORT,
+          useClass: DrizzleShopItemRepository,
+        },
+        {
+          provide: PURCHASE_REPOSITORY_PORT,
+          useClass: DrizzlePurchaseRepository,
+        },
+        {
+          provide: QR_TOOL_REPOSITORY_PORT,
+          useClass: DrizzleQrToolRepository,
+        },
+        {
+          provide: INVENTORY_ITEM_REPOSITORY_PORT,
+          useClass: DrizzleInventoryItemRepository,
+        },
+        ShopQueryService,
+        InventoryQueryService,
         CreateRoomUseCase,
         JoinRoomUseCase,
         ReconnectClientUseCase,
@@ -163,11 +213,17 @@ describe('GameSessionModule wiring', () => {
         SubmitAnswerUseCase,
         ReviewAnswerUseCase,
         AdvanceOnTimeoutUseCase,
+        // Shop flow providers (8.2), mirroring the module.
+        ShopTimerRegistry,
+        CloseShopUseCase,
+        // Purchase/inventory providers (8.3), mirroring the module.
+        PurchaseItemUseCase,
         RoomSnapshotAssembler,
         LobbyQueryService,
         TimerQueryService,
         HostAuthGuard,
         PlayerIdentityGuard,
+        TeamMemberOrHostGuard,
         GameSessionGateway,
         LobbyPresenceRegistry,
         SocketIdentityResolver,
@@ -176,6 +232,12 @@ describe('GameSessionModule wiring', () => {
         {
           provide: HOST_REALTIME_EVENTS_PORT,
           useExisting: PresenceHostRealtimeEventsAdapter,
+        },
+        // Team-socket delivery (8.3), mirroring the module binding.
+        PresenceTeamRealtimeEventsAdapter,
+        {
+          provide: TEAM_REALTIME_EVENTS_PORT,
+          useExisting: PresenceTeamRealtimeEventsAdapter,
         },
       ],
     }).compile();
@@ -214,6 +276,9 @@ describe('GameSessionModule wiring', () => {
     expect(moduleRef.get(PlayerIdentityGuard)).toBeInstanceOf(
       PlayerIdentityGuard,
     );
+    expect(moduleRef.get(TeamMemberOrHostGuard)).toBeInstanceOf(
+      TeamMemberOrHostGuard,
+    );
     await moduleRef.close();
   });
 
@@ -240,6 +305,14 @@ describe('GameSessionModule wiring', () => {
     expect(adapter).toBeInstanceOf(PresenceHostRealtimeEventsAdapter);
     // useExisting: the port token resolves to the SAME instance as the class.
     expect(moduleRef.get(HOST_REALTIME_EVENTS_PORT)).toBe(adapter);
+    await moduleRef.close();
+  });
+
+  it('resolves the team-events port to the presence adapter (8.3)', async () => {
+    const moduleRef = await buildModule();
+    const adapter = moduleRef.get(PresenceTeamRealtimeEventsAdapter);
+    expect(adapter).toBeInstanceOf(PresenceTeamRealtimeEventsAdapter);
+    expect(moduleRef.get(TEAM_REALTIME_EVENTS_PORT)).toBe(adapter);
     await moduleRef.close();
   });
 
@@ -270,6 +343,25 @@ describe('GameSessionModule wiring', () => {
     await moduleRef.close();
   });
 
+  it('instantiates the shop flow: timer, close use case and read model (8.2)', async () => {
+    const moduleRef = await buildModule();
+    expect(moduleRef.get(ShopTimerRegistry)).toBeInstanceOf(ShopTimerRegistry);
+    expect(moduleRef.get(CloseShopUseCase)).toBeInstanceOf(CloseShopUseCase);
+    expect(moduleRef.get(ShopQueryService)).toBeInstanceOf(ShopQueryService);
+    await moduleRef.close();
+  });
+
+  it('instantiates the purchase use case and inventory read model (8.3)', async () => {
+    const moduleRef = await buildModule();
+    expect(moduleRef.get(PurchaseItemUseCase)).toBeInstanceOf(
+      PurchaseItemUseCase,
+    );
+    expect(moduleRef.get(InventoryQueryService)).toBeInstanceOf(
+      InventoryQueryService,
+    );
+    await moduleRef.close();
+  });
+
   it('instantiates all lobby and battle controllers', async () => {
     const moduleRef = await buildModule();
     expect(moduleRef.get(RoomsController)).toBeInstanceOf(RoomsController);
@@ -280,6 +372,10 @@ describe('GameSessionModule wiring', () => {
     expect(moduleRef.get(BoardController)).toBeInstanceOf(BoardController);
     expect(moduleRef.get(QuestionsController)).toBeInstanceOf(
       QuestionsController,
+    );
+    expect(moduleRef.get(ShopController)).toBeInstanceOf(ShopController);
+    expect(moduleRef.get(InventoryController)).toBeInstanceOf(
+      InventoryController,
     );
     await moduleRef.close();
   });
