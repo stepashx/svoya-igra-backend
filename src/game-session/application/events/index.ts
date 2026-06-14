@@ -4,3 +4,4 @@ export * from './payloads';
 export * from './gameplay-events';
 export * from './gameplay-payloads';
 export * from './commerce-events';
+export * from './commerce-payloads';

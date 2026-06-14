@@ -120,4 +120,22 @@ describe('LobbyPresenceRegistry', () => {
       expect(reg.socketsForHost('room-1')).toEqual([]);
     });
   });
+
+  describe('socketsForPlayer (8.3 team reverse-lookup)', () => {
+    it('returns every tab of the player and never the host', () => {
+      const reg = make();
+      reg.register('s1', player('p1', 'room-1'));
+      reg.register('s2', player('p1', 'room-1'));
+      reg.register('h1', host('room-1'));
+
+      expect([...reg.socketsForPlayer('p1')].sort()).toEqual(['s1', 's2']);
+    });
+
+    it('returns [] for a player with no live socket', () => {
+      const reg = make();
+      reg.register('h1', host('room-1'));
+
+      expect(reg.socketsForPlayer('p1')).toEqual([]);
+    });
+  });
 });

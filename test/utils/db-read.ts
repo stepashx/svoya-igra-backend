@@ -55,6 +55,42 @@ export async function readBoardCells(roomId: string): Promise<BoardCellRow[]> {
   return result.rows;
 }
 
+/** A persisted purchase record (§14.8), narrowed to the fields the 8.3 e2e asserts. */
+export interface PurchaseRow {
+  id: string;
+  team_id: string;
+  shop_item_id: string;
+  price: number;
+}
+
+/** Every purchase recorded for a room (used to assert the §14.8 buy/race). */
+export async function readPurchases(roomId: string): Promise<PurchaseRow[]> {
+  const result = await getPool().query<PurchaseRow>(
+    'SELECT id, team_id, shop_item_id, price FROM purchases WHERE room_id = $1',
+    [roomId],
+  );
+  return result.rows;
+}
+
+/** A persisted inventory entry, narrowed to the fields the 8.3 e2e asserts. */
+export interface InventoryItemRow {
+  id: string;
+  team_id: string;
+  shop_item_id: string;
+  qr_tool_id: string;
+}
+
+/** Every inventory entry recorded for a room (used to assert the team gain). */
+export async function readInventoryItems(
+  roomId: string,
+): Promise<InventoryItemRow[]> {
+  const result = await getPool().query<InventoryItemRow>(
+    'SELECT id, team_id, shop_item_id, qr_tool_id FROM inventory_items WHERE room_id = $1',
+    [roomId],
+  );
+  return result.rows;
+}
+
 export async function closeDbReadPool(): Promise<void> {
   if (pool) {
     await pool.end();

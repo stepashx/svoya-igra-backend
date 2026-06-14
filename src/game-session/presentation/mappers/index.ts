@@ -8,3 +8,5 @@ export * from './board.presentation-mapper';
 export * from './question.presentation-mapper';
 // Shop presentation mappers (sub-stage 8.2).
 export * from './shop.presentation-mapper';
+// Purchase/inventory/QR presentation mappers (sub-stage 8.3).
+export * from './commerce.presentation-mapper';

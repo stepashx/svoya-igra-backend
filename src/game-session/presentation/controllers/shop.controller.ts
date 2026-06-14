@@ -1,9 +1,9 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   Param,
   Post,
   UseGuards,
@@ -12,7 +12,6 @@ import {
   ApiHeader,
   ApiOkResponse,
   ApiOperation,
-  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
@@ -21,36 +20,49 @@ import {
   LobbyQueryService,
   TimerQueryService,
 } from '../../application/queries';
-import { CloseShopUseCase } from '../../application/use-cases';
 import {
+  CloseShopUseCase,
+  PurchaseItemUseCase,
+} from '../../application/use-cases';
+import { Player } from '../../domain/entities';
+import { PurchaseItemRequestDto } from '../dto/request';
+import {
+  PurchaseResponseDto,
+  PurchaseResultResponseDto,
   ShopItemResponseDto,
   ShopRoundResponseDto,
   StageResponseDto,
 } from '../dto/response';
 import {
   CurrentHost,
+  CurrentPlayer,
   HOST_TOKEN_HEADER,
   HostAuthGuard,
   HostContext,
+  PLAYER_TOKEN_HEADER,
+  PlayerIdentityGuard,
 } from '../http';
-import { toShopItemResponse, toShopRoundResponse } from '../mappers';
-
-const NOT_IMPLEMENTED = 'Purchases arrive in Stage 8.3.';
+import {
+  toPurchaseResponse,
+  toPurchaseResultResponse,
+  toShopItemResponse,
+  toShopRoundResponse,
+} from '../mappers';
 
 /**
  * Shop REST surface (plan §15.8), nested under a room. Design A: the commerce
  * routes live here because Game Flow owns the stages (SHOP) and the turn,
- * while the catalog read model is the commerce-exported
- * {@link ShopQueryService}. Sub-stage 8.2 wires the shop lifecycle:
+ * while the catalog/purchase reads come from the commerce-exported
+ * {@link ShopQueryService}. Sub-stage 8.2 wired the shop lifecycle (items /
+ * round / close); sub-stage 8.3 completes the surface:
  *
- * - `GET items` — the catalog with per-room purchased-state (open: needed for
- *   reconnect into SHOP).
- * - `GET round` — the current shop round, finality and timer (open).
- * - `POST close` — the host closes the shop (HostAuthGuard); the same call
- *   serves the close button and the expired countdown (the `advance` pattern).
+ * - `POST purchase` — a team captain buys an item for their OWN team
+ *   (PlayerIdentityGuard for coarse authn; the {@link PurchaseItemUseCase}
+ *   enforces captaincy and "first to buy"). 200 (the POST-close precedent).
+ * - `GET purchases` — the room's purchase records (open; no QR content).
  *
- * The purchase chain stays 501 until 8.3: `POST purchase` (captain-only,
- * "first to buy") and `GET purchases`.
+ * The captain's purchase reply carries the QR `publicUrl`; the room broadcasts
+ * and the purchase list never do (§16.5 secrecy).
  */
 @ApiTags(SwaggerTag.Commerce)
 @Controller('rooms/:code/shop')
@@ -58,6 +70,7 @@ export class ShopController {
   constructor(
     private readonly shopQuery: ShopQueryService,
     private readonly closeShop: CloseShopUseCase,
+    private readonly purchaseItem: PurchaseItemUseCase,
     private readonly lobby: LobbyQueryService,
     private readonly timers: TimerQueryService,
   ) {}
@@ -72,10 +85,21 @@ export class ShopController {
   }
 
   @Post('purchase')
-  @ApiOperation({ summary: 'Purchase a shop item (captain only)' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED })
-  purchase(): never {
-    throw new NotImplementedException();
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PlayerIdentityGuard)
+  @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
+  @ApiOperation({ summary: 'Purchase a shop item (team captain only)' })
+  @ApiOkResponse({ type: PurchaseResultResponseDto })
+  async purchase(
+    @CurrentPlayer() player: Player,
+    @Body() body: PurchaseItemRequestDto,
+  ): Promise<PurchaseResultResponseDto> {
+    const result = await this.purchaseItem.execute({
+      roomId: player.roomId,
+      shopItemId: body.shopItemId,
+      actingPlayerId: player.id,
+    });
+    return toPurchaseResultResponse(result);
   }
 
   @Get('round')
@@ -100,8 +124,12 @@ export class ShopController {
 
   @Get('purchases')
   @ApiOperation({ summary: "List the room's purchases" })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED })
-  listPurchases(): never {
-    throw new NotImplementedException();
+  @ApiOkResponse({ type: [PurchaseResponseDto] })
+  async listPurchases(
+    @Param('code') code: string,
+  ): Promise<PurchaseResponseDto[]> {
+    const room = await this.lobby.getRoom(code);
+    const purchases = await this.shopQuery.listPurchases(room.id);
+    return purchases.map(toPurchaseResponse);
   }
 }

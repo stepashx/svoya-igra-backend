@@ -30,6 +30,22 @@ export async function presetRoomCounters(
   );
 }
 
+/**
+ * Overwrite a team's scores (§14.7). Used by the 8.3 purchase suite to give a
+ * team a known balance AFTER it has entered the shop (the live entry cycle
+ * already awarded points, so presetting before would be overwritten). Both
+ * columns are plain integers with no CHECK constraint, so a raw UPDATE is safe.
+ */
+export async function presetTeamScores(
+  teamId: string,
+  scores: { earnedScore: number; balance: number },
+): Promise<void> {
+  await getPool().query(
+    'UPDATE teams SET earned_score = $2, balance = $3 WHERE id = $1',
+    [teamId, scores.earnedScore, scores.balance],
+  );
+}
+
 export async function closeDbWritePool(): Promise<void> {
   if (pool) {
     await pool.end();

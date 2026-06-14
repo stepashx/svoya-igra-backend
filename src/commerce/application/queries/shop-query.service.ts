@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ShopItem } from '../../domain/entities';
+import { Purchase, ShopItem } from '../../domain/entities';
 import {
   PURCHASE_REPOSITORY_PORT,
   PurchaseRepositoryPort,
@@ -16,10 +16,16 @@ export interface ShopCatalogEntry {
 /**
  * Stateless read model for the shop GET endpoints (plan §15.8) — the
  * {@link BoardQueryService} pattern: pure queries, no mutation, no events, no
- * transaction. Returns domain entities/projections; the game-session
+ * transaction of its own. Returns domain entities/projections; the game-session
  * presentation layer maps them to DTOs (and keeps the QR `publicUrl` out of
  * every room-facing payload — never this service's concern, the catalog
  * carries only `qrToolId`).
+ *
+ * Transaction-agnostic: the repositories resolve their executor from the
+ * ambient {@link TransactionContext}, so the SAME service serves both the
+ * stand-alone REST reads (no transaction) AND an in-transaction call — the
+ * {@link PurchaseItemUseCase} runs `listCatalog` inside its purchase
+ * transaction so the snapshot already reflects the just-recorded buy.
  *
  * Lives in commerce (which owns the catalog and the purchase facts) and is
  * exported from {@link CommerceModule} so the game-session shop controller can
@@ -51,5 +57,10 @@ export class ShopQueryService {
       item,
       available: !purchasedItemIds.has(item.id),
     }));
+  }
+
+  /** The room's purchase records (§15.8), newest-or-oldest order left to the DB. */
+  listPurchases(roomId: string): Promise<Purchase[]> {
+    return this.purchases.listByRoomId(roomId);
   }
 }

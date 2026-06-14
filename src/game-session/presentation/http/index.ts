@@ -3,3 +3,4 @@ export * from './current-player.decorator';
 export * from './current-host.decorator';
 export * from './host-auth.guard';
 export * from './player-identity.guard';
+export * from './team-member-or-host.guard';

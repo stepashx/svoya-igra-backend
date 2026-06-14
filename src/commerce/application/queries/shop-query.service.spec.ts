@@ -72,4 +72,14 @@ describe('ShopQueryService', () => {
       false,
     );
   });
+
+  it('lists the room purchase records (8.3)', async () => {
+    const purchases = [makePurchase('item-1'), makePurchase('item-2')];
+    const { service, purchaseRepo } = build([], purchases);
+
+    const result = await service.listPurchases('room-1');
+
+    expect(purchaseRepo.listByRoomId).toHaveBeenCalledWith('room-1');
+    expect(result).toBe(purchases);
+  });
 });

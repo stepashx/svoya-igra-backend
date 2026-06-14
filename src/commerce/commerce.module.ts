@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
-import { ShopQueryService } from './application/queries';
+import { InventoryQueryService, ShopQueryService } from './application/queries';
 import {
   INVENTORY_ITEM_REPOSITORY_PORT,
   PURCHASE_REPOSITORY_PORT,
@@ -26,10 +26,12 @@ import {
  * game-session shop/inventory use cases (8.2/8.3) consume. Sub-stage 8.2 adds
  * the first commerce application layer: the read-only {@link ShopQueryService}
  * (catalog + per-room availability), exported for the game-session shop
- * controller. The purchase use cases — captain-only, "first to buy", balance
- * debit via Team.debitBalance — arrive in 8.3. No RealtimeModule import — the
- * `server:commerce:*` events are emitted by the game-session use cases
- * through the RealtimeEventsPort.
+ * controller. Sub-stage 8.3 adds the {@link InventoryQueryService} (team
+ * inventory + QR tools) for the inventory controller; the purchase use case
+ * itself — captain-only, "first to buy", balance debit via Team.debitBalance —
+ * lives in game-session and consumes the commerce ports exported below. No
+ * RealtimeModule import — the `server:commerce:*` events are emitted by the
+ * game-session use cases through the RealtimeEventsPort.
  */
 @Module({
   imports: [InfrastructureModule],
@@ -42,8 +44,9 @@ import {
       provide: INVENTORY_ITEM_REPOSITORY_PORT,
       useClass: DrizzleInventoryItemRepository,
     },
-    // Read model (8.2).
+    // Read models (8.2 shop catalog, 8.3 team inventory).
     ShopQueryService,
+    InventoryQueryService,
   ],
   exports: [
     // Consumed by the game-session shop/inventory use cases (Design A).
@@ -52,6 +55,7 @@ import {
     PURCHASE_REPOSITORY_PORT,
     INVENTORY_ITEM_REPOSITORY_PORT,
     ShopQueryService,
+    InventoryQueryService,
   ],
 })
 export class CommerceModule {}

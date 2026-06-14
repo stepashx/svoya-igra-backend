@@ -9,3 +9,5 @@ export * from './timer.response';
 export * from './question.response';
 // Shop response DTOs (sub-stage 8.2).
 export * from './shop.response';
+// Purchase/inventory/QR response DTOs (sub-stage 8.3).
+export * from './commerce.response';

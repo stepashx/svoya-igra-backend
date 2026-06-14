@@ -1,14 +1,21 @@
-import { NotImplementedException } from '@nestjs/common';
 import { ShopQueryService } from '../../../commerce/application/queries';
 import { ShopItem } from '../../../commerce/domain/entities';
 import {
   LobbyQueryService,
   TimerQueryService,
 } from '../../application/queries';
-import { CloseShopUseCase } from '../../application/use-cases';
+import {
+  CloseShopUseCase,
+  PurchaseItemUseCase,
+} from '../../application/use-cases';
 import {
   FIXED_NOW,
+  makeInventoryItem,
+  makePlayer,
+  makePurchase,
+  makeQrTool,
   makeRoom,
+  makeShopItem,
 } from '../../application/use-cases/lobby-test-doubles';
 import { ShopController } from './shop.controller';
 
@@ -25,18 +32,28 @@ describe('ShopController', () => {
   const build = () => {
     const shopQuery = {
       listCatalog: jest.fn(),
+      listPurchases: jest.fn(),
     } as unknown as jest.Mocked<ShopQueryService>;
     const closeShop = {
       execute: jest.fn(),
     } as unknown as jest.Mocked<CloseShopUseCase>;
+    const purchaseItem = {
+      execute: jest.fn(),
+    } as unknown as jest.Mocked<PurchaseItemUseCase>;
     const lobby = {
       getRoom: jest.fn(),
     } as unknown as jest.Mocked<LobbyQueryService>;
     const timers = {
       readShop: jest.fn(),
     } as unknown as jest.Mocked<TimerQueryService>;
-    const controller = new ShopController(shopQuery, closeShop, lobby, timers);
-    return { controller, shopQuery, closeShop, lobby, timers };
+    const controller = new ShopController(
+      shopQuery,
+      closeShop,
+      purchaseItem,
+      lobby,
+      timers,
+    );
+    return { controller, shopQuery, closeShop, purchaseItem, lobby, timers };
   };
 
   it('lists the catalog with availability (8.2)', async () => {
@@ -105,13 +122,89 @@ describe('ShopController', () => {
     expect(res).toEqual({ currentStage: 'GAME_BOARD' });
   });
 
-  it('returns 501 for purchase (8.3)', () => {
-    const { controller } = build();
-    expect(() => controller.purchase()).toThrow(NotImplementedException);
+  it('purchases an item for the captain’s team and returns the rich reply (8.3)', async () => {
+    const { controller, purchaseItem } = build();
+    const player = makePlayer({
+      id: 'captain-1',
+      roomId: 'room-1',
+      teamId: 'team-1',
+    });
+    const qrTool = makeQrTool({ id: 'qr-1' });
+    purchaseItem.execute.mockResolvedValue({
+      purchase: makePurchase({
+        id: 'purchase-1',
+        teamId: 'team-1',
+        shopItemId: 'shop-item-1',
+        price: 100,
+      }),
+      inventoryItem: makeInventoryItem({
+        id: 'inv-1',
+        teamId: 'team-1',
+        shopItemId: 'shop-item-1',
+        qrToolId: 'qr-1',
+      }),
+      qrTool,
+      shopItem: makeShopItem({ id: 'shop-item-1' }),
+      balance: 400,
+    });
+
+    const res = await controller.purchase(player, {
+      shopItemId: 'shop-item-1',
+    });
+
+    expect(purchaseItem.execute).toHaveBeenCalledWith({
+      roomId: 'room-1',
+      shopItemId: 'shop-item-1',
+      actingPlayerId: 'captain-1',
+    });
+    expect(res).toEqual({
+      purchase: {
+        id: 'purchase-1',
+        teamId: 'team-1',
+        shopItemId: 'shop-item-1',
+        price: 100,
+        purchasedAt: FIXED_NOW.toISOString(),
+      },
+      inventoryItem: {
+        id: 'inv-1',
+        shopItemId: 'shop-item-1',
+        qrToolId: 'qr-1',
+        addedAt: FIXED_NOW.toISOString(),
+      },
+      qrTool: {
+        id: 'qr-1',
+        title: qrTool.title,
+        description: qrTool.description,
+        fileFormat: 'SVG',
+        publicUrl: qrTool.publicUrl,
+      },
+      balance: 400,
+    });
   });
 
-  it('returns 501 for the purchase list (8.3)', () => {
-    const { controller } = build();
-    expect(() => controller.listPurchases()).toThrow(NotImplementedException);
+  it('lists the room purchases (8.3)', async () => {
+    const { controller, lobby, shopQuery } = build();
+    lobby.getRoom.mockResolvedValue(makeRoom({ id: 'room-1' }));
+    shopQuery.listPurchases.mockResolvedValue([
+      makePurchase({
+        id: 'purchase-1',
+        teamId: 'team-1',
+        shopItemId: 'shop-item-1',
+        price: 100,
+      }),
+    ]);
+
+    const res = await controller.listPurchases('ABCDEF');
+
+    expect(shopQuery.listPurchases).toHaveBeenCalledWith('room-1');
+    expect(res).toEqual([
+      {
+        id: 'purchase-1',
+        teamId: 'team-1',
+        shopItemId: 'shop-item-1',
+        price: 100,
+        purchasedAt: FIXED_NOW.toISOString(),
+      },
+    ]);
   });
 });

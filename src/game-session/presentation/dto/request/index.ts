@@ -8,3 +8,5 @@ export * from './select-cell.request';
 export * from './cell-ref.request';
 export * from './submit-answer.request';
 export * from './review-answer.request';
+// Commerce request DTOs (sub-stage 8.3).
+export * from './purchase-item.request';

@@ -19,3 +19,5 @@ export * from './review-answer.use-case';
 export * from './advance-on-timeout.use-case';
 // Shop flow (sub-stage 8.2).
 export * from './close-shop.use-case';
+// Purchases + inventory (sub-stage 8.3).
+export * from './purchase-item.use-case';

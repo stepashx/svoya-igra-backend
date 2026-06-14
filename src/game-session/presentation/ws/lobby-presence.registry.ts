@@ -95,6 +95,16 @@ export class LobbyPresenceRegistry {
     return this.socketsForIdentity(`h:${roomId}`);
   }
 
+  /**
+   * Live socket ids of a player (every open tab). Reverse lookup for
+   * team-audience delivery (8.3 `inventory-updated`); mirrors
+   * {@link socketsForHost}, with the `p:` key shape kept private to this file,
+   * next to {@link presenceIdentityKey}.
+   */
+  socketsForPlayer(playerId: string): readonly string[] {
+    return this.socketsForIdentity(`p:${playerId}`);
+  }
+
   has(socketId: string): boolean {
     return this.bySocket.has(socketId);
   }

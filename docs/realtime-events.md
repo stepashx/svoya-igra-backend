@@ -183,7 +183,7 @@ notes_ below for the secrecy and timer constraints fixed now.
 | `server:gameplay:answer-rejected` | server | gameplay | room | Host rejected the answer — review outcome, NOT scoring | §16.4 | Stage 6.2 (ReviewAnswer) |
 | `server:gameplay:question-correct-answer-shown-to-host` | server | gameplay | host | Correct answer shown ONLY to host after the team answered | §16.4 | Stage 6.2 (ReviewAnswer) — HOST-ONLY, never to players (Этап2 §8) |
 | `server:gameplay:cell-blocked` | server | gameplay | room | Cell blocked (on both correct and incorrect answers) | §16.4 | Stage 6.2 (ReviewAnswer) |
-| `server:gameplay:score-changed` | server | gameplay | room | Team score changed | §16.4 | Stage 7.1 (ReviewAnswer) — emitted on accepted review only; payload `{ roomId, teamId, earnedScore, balance, delta }` |
+| `server:gameplay:score-changed` | server | gameplay | room | Team score changed | §16.4 | Stage 7.1 (ReviewAnswer) — accepted review, POSITIVE `delta`; ALSO Stage 8.3 (PurchaseItemUseCase) on a shop debit, NEGATIVE `delta` (only `balance` moves, `earnedScore` holds); payload `{ roomId, teamId, earnedScore, balance, delta }` |
 | `server:game-session:game-turn-changed` | server | game-session | room | Active team changed | §16.4 → see game-session | Shared §16.3/§16.4 — not duplicated in gameplay (emitted by StartGame in 5.2a and by MoveToNextTurn in 6.2) |
 
 ### Gameplay — client commands (§16.4)
@@ -254,20 +254,23 @@ Catalog of the §16.5 "shop & inventory" broadcasts. The constants live in
 game-session use cases that emit them, Design A). The shop lifecycle trio —
 `shop-opened`, `shop-final-opened`, `shop-closed` — is **emitted since
 sub-stage 8.2** (ReviewAnswerUseCase opens the shop, CloseShopUseCase closes
-it); the purchase chain remains a **name contract reserved for Stage 8.3**.
-The **Status** column records each name's disposition. Audience is a
-publishing concern (see the Audience section above), shown per row. See
-_Commerce contract notes_ below for the privacy constraint fixed now.
+it); the purchase chain — `shop-state-updated`, `shop-item-purchased`,
+`shop-item-unavailable` (room) and `inventory-updated` (team) — is **emitted
+since sub-stage 8.3** (PurchaseItemUseCase). `shop-purchase-rejected` is
+**superseded** (REST-only 409; no captain emitter built). The **Status**
+column records each name's disposition. Audience is a publishing concern (see
+the Audience section above), shown per row. See _Commerce contract notes_
+below for the privacy constraint enforced throughout.
 
 | Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
 |---|---|---|---|---|---|---|
 | `server:commerce:shop-opened` | server | commerce | room | Shop opened (ANSWER_REVIEW → SHOP, every-6th-question cadence) | §16.5 | Emitted since 8.2 by ReviewAnswerUseCase (shop trigger) |
 | `server:commerce:shop-final-opened` | server | commerce | room | Final shop opened (board exhausted, before presentations) | §16.5 | Emitted since 8.2 by ReviewAnswerUseCase (shop trigger, exhausted board) |
-| `server:commerce:shop-state-updated` | server | commerce | room | Coarse snapshot of the shop (catalog + purchased state) — WITHOUT publicUrl/QR content | §16.5 | Reserved for Stage 8.3 (first emitter is the purchase) — NOT emitted in 8.1 |
-| `server:commerce:shop-item-purchased` | server | commerce | room | A team bought an item (item + buying team; price snapshot) — WITHOUT publicUrl/QR content | §16.5 | Reserved for Stage 8.3 (Purchase) — NOT emitted in 8.1 |
-| `server:commerce:shop-item-unavailable` | server | commerce | room | An item became unavailable (purchased by another team, §14.8) | §16.5 | Reserved for Stage 8.3 (Purchase) — NOT emitted in 8.1 |
-| `server:commerce:shop-purchase-rejected` | server | commerce | captain | The captain's purchase was rejected (insufficient balance / already purchased) | §16.5 | Reserved for Stage 8.3 — may stay REST-only (no captain emitter yet, see notes) |
-| `server:commerce:inventory-updated` | server | commerce | team | The team's inventory gained the bought QR tool (publicUrl allowed HERE — team audience) | §16.5 | Reserved for Stage 8.3 (Purchase) — NOT emitted in 8.1 |
+| `server:commerce:shop-state-updated` | server | commerce | room | Coarse snapshot of the shop (catalog + purchased state) — WITHOUT publicUrl/QR content | §16.5 | Emitted since 8.3 by PurchaseItemUseCase; payload `{ roomId, items: [{ id, title, description, price, qrToolId, available }] }` (in-tx, LAST of the room block) |
+| `server:commerce:shop-item-purchased` | server | commerce | room | A team bought an item (item + buying team; price snapshot) — WITHOUT publicUrl/QR content | §16.5 | Emitted since 8.3 by PurchaseItemUseCase; payload `{ roomId, teamId, shopItemId, price, purchasedAt }` |
+| `server:commerce:shop-item-unavailable` | server | commerce | room | An item became unavailable (purchased by another team, §14.8) | §16.5 | Emitted since 8.3 by PurchaseItemUseCase; payload `{ roomId, shopItemId }` |
+| `server:commerce:shop-purchase-rejected` | server | commerce | captain | The captain's purchase was rejected (insufficient balance / already purchased) | §16.5 | **Superseded** — REST-only: the rejection is the POST-purchase 409 error reply (no captain socket emitter built) |
+| `server:commerce:inventory-updated` | server | commerce | team | The team's inventory gained the bought QR tool (publicUrl allowed HERE — team audience) | §16.5 | Emitted since 8.3 by PurchaseItemUseCase, team-audience, AFTER commit; payload `{ roomId, teamId, inventoryItem: { id, shopItemId, qrToolId, addedAt }, qrTool: { id, title, description, fileFormat, publicUrl } }` |
 | `server:commerce:shop-closed` | server | commerce | room | Shop closed (host action or shop timer) → back to GAME_BOARD or on to presentations | §16.5 | Emitted since 8.2 by CloseShopUseCase |
 
 ### Commerce — client commands (§16.5)
@@ -300,15 +303,17 @@ in kebab-case (camelCase split on case, e.g. `finalOpened` → `final-opened`,
 
 ### Commerce contract notes (§16.5)
 
-- **The shop lifecycle is live since 8.2; the purchase chain waits for 8.3.**
-  Sub-stage 8.1 fixed the name / direction / area / audience contract;
-  sub-stage 8.2 wires the lifecycle: `shop-opened` / `shop-final-opened` fire
-  room-wide LAST in the ReviewAnswerUseCase broadcast block (payload
-  `{roomId, currentShopRound, startedAt, endsAt, minClosableAt}`) and
-  `shop-closed` fires from CloseShopUseCase (payload
-  `{roomId, currentShopRound, nextStage}`). The purchase chain
-  (`shop-item-purchased`, `shop-item-unavailable`, `shop-state-updated`,
-  `shop-purchase-rejected`, `inventory-updated`) arrives with 8.3.
+- **The full §16.5 surface is live as of 8.3.** Sub-stage 8.1 fixed the name /
+  direction / area / audience contract; 8.2 wired the lifecycle — `shop-opened`
+  / `shop-final-opened` fire room-wide LAST in the ReviewAnswerUseCase broadcast
+  block (payload `{roomId, currentShopRound, startedAt, endsAt, minClosableAt}`)
+  and `shop-closed` fires from CloseShopUseCase (payload
+  `{roomId, currentShopRound, nextStage}`). Sub-stage 8.3 wires the purchase
+  chain in PurchaseItemUseCase: room-wide `score-changed` (negative delta) →
+  `shop-item-purchased` → `shop-item-unavailable` → `shop-state-updated` fire
+  IN-transaction; then the team-audience `inventory-updated` fires AFTER commit
+  (see the privacy note below). `shop-purchase-rejected` was not built — the
+  captain's rejection is the POST-purchase 409 reply.
 - **QR privacy, fixed now.** The QR tool belongs to the buying team. Room-wide
   payloads — `shop-item-purchased` and `shop-state-updated` in particular —
   must NEVER carry `publicUrl` or any QR content; the tool reaches its owners
@@ -319,12 +324,37 @@ in kebab-case (camelCase split on case, e.g. `finalOpened` → `final-opened`,
   is room-global purchased-state (§14.8: an item is unique per game).
   Affordability is computed client-side from team balances (Этап 2 §10) — the
   server does not broadcast per-team affordability.
-- **Team/captain delivery does not exist yet.** The transport offers
-  `emitToRoom` / `emitToClient` / `emitToHost` (6.2b) — there is no team or
-  captain emitter. Stage 8.3 either builds one over the presence registry
-  exactly like the 6.2b host adapter (`socketsForIdentity('p:<playerId>')` is
-  ready for player-scoped lookup) or keeps `shop-purchase-rejected` REST-only
-  (the captain gets the rejection as the REST error reply) — decided in 8.3.
+- **`inventory-updated` is emitted AFTER the purchase transaction commits.**
+  This is the one deliberate exception to "emit inside the transaction": it is
+  the only payload carrying the QR `publicUrl`, so were it sent in-transaction
+  and the COMMIT then failed, the team would hold a QR for a rolled-back buy.
+  The room-wide events stay in-transaction (their rollback risk is a stale
+  purchased-state, not a leaked secret). The team fan-out reads from in-memory
+  objects and swallows its own failures, so it cannot abort the committed buy.
+- **Team delivery now exists; the captain rejection stays REST-only.** Stage
+  8.3 added the `TeamRealtimeEventsPort` and `PresenceTeamRealtimeEventsAdapter`
+  (the 6.2b host pattern, mirrored): it resolves the team roster from the player
+  repository and fans out to each member's live sockets via
+  `LobbyPresenceRegistry.socketsForPlayer('p:<playerId>')`. No captain emitter
+  was built — `shop-purchase-rejected` is superseded by the POST-purchase 409.
+- **Inventory reconnect is a guarded REST read.** A reconnecting client re-reads
+  `GET rooms/:code/inventory/teams/:teamId[/qr-tools]` (the GET-board reconnect
+  precedent), gated by the `TeamMemberOrHostGuard` (team members or host). The
+  `publicUrl` is allowed on these reads — gated to its owners — but never in a
+  room-wide payload.
+- **§19 QR-item uniqueness is transitive — no explicit index (decision G).** The
+  plan's `inventory_items (room_id, qr_tool_id)` unique index is deliberately
+  NOT added in 8.3. A duplicate `(room, qrTool)` is impossible transitively:
+  `purchases (room_id, shop_item_id)` is UNIQUE, shop↔QR is 1:1, and the single
+  `inventory.create` lives inside the same purchase transaction guarded by that
+  unique index. So `db:generate` stays "No schema changes". (If a future stage
+  decouples shop items from QR tools, revisit and add the index.)
+- **Team-hopping during SHOP is a known MVP risk (decision L).** `Join`/`Leave`
+  team are not stage-gated, so during SHOP a non-captain could move into another
+  team via the direct API, read its inventory/QR, and move back. The
+  `TeamMemberOrHostGuard` is correct for the membership it sees; the fix —
+  gating Join/LeaveTeam to the LOBBY stage — is tracked as a separate Stage 5
+  task and intentionally out of 8.3 scope.
 
 ## Stage 5.2a — what ships now
 

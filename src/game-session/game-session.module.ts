@@ -5,6 +5,7 @@ import { InfrastructureModule } from '../infrastructure/infrastructure.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import {
   HOST_REALTIME_EVENTS_PORT,
+  TEAM_REALTIME_EVENTS_PORT,
   TRANSACTION_PORT,
 } from './application/ports';
 import {
@@ -25,6 +26,7 @@ import {
   MarkClientDisconnectedUseCase,
   MarkTeamReadyUseCase,
   OpenQuestionUseCase,
+  PurchaseItemUseCase,
   ReconnectClientUseCase,
   RejectSelectionUseCase,
   ReviewAnswerUseCase,
@@ -58,11 +60,16 @@ import {
   TeamsController,
   TopicsController,
 } from './presentation/controllers';
-import { HostAuthGuard, PlayerIdentityGuard } from './presentation/http';
+import {
+  HostAuthGuard,
+  PlayerIdentityGuard,
+  TeamMemberOrHostGuard,
+} from './presentation/http';
 import {
   GameSessionGateway,
   LobbyPresenceRegistry,
   PresenceHostRealtimeEventsAdapter,
+  PresenceTeamRealtimeEventsAdapter,
   SocketIdentityResolver,
 } from './presentation/ws';
 
@@ -164,6 +171,10 @@ import {
     // catalog read model (ShopQueryService) comes from CommerceModule.
     ShopTimerRegistry,
     CloseShopUseCase,
+    // Purchases + inventory (sub-stage 8.3): the captain buy; the commerce
+    // repository ports it needs and the InventoryQueryService come from the
+    // imported CommerceModule.
+    PurchaseItemUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,
@@ -171,6 +182,8 @@ import {
     // Route guards.
     HostAuthGuard,
     PlayerIdentityGuard,
+    // Inventory read authz (8.3): team member OR room host.
+    TeamMemberOrHostGuard,
     // WebSocket presence/reconnect (5.2b): a second gateway on the shared io
     // server plus its in-memory presence registry and token→identity resolver.
     GameSessionGateway,
@@ -182,6 +195,14 @@ import {
     {
       provide: HOST_REALTIME_EVENTS_PORT,
       useExisting: PresenceHostRealtimeEventsAdapter,
+    },
+    // Team-socket delivery (8.3): presence reverse-lookup over the team roster
+    // behind the application-level team-events port — the only channel allowed
+    // to carry the QR publicUrl (`inventory-updated`, after commit).
+    PresenceTeamRealtimeEventsAdapter,
+    {
+      provide: TEAM_REALTIME_EVENTS_PORT,
+      useExisting: PresenceTeamRealtimeEventsAdapter,
     },
   ],
 })

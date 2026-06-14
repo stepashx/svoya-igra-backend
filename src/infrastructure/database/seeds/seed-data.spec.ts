@@ -8,6 +8,7 @@ import {
   questionSchema,
   SeedData,
   seedFileSchemas,
+  shopItemSchema,
 } from './seed-data.schema';
 
 const isUuid = (value: string) => z.string().uuid().safeParse(value).success;
@@ -119,6 +120,16 @@ describe('seed file schemas (structure)', () => {
       categorySchema.safeParse({ ...data.categories[0], surprise: true })
         .success,
     ).toBe(false);
+  });
+
+  it('rejects a shop item with a zero price (must be strictly positive)', () => {
+    // A free item would be unbuyable (Team.debitBalance rejects price <= 0).
+    expect(
+      shopItemSchema.safeParse({ ...data.shopItems[0], price: 0 }).success,
+    ).toBe(false);
+    expect(
+      shopItemSchema.safeParse({ ...data.shopItems[0], price: 100 }).success,
+    ).toBe(true);
   });
 });
 
