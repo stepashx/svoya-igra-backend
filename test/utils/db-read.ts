@@ -129,6 +129,33 @@ export async function readTeamSubmissionId(
   return result.rows[0]?.presentation_submission_id ?? null;
 }
 
+/** A persisted evaluation score (§12), narrowed to the fields the 10.2 e2e asserts. */
+export interface EvaluationScoreRow {
+  id: string;
+  target_team_id: string;
+  evaluator_type: string;
+  evaluator_team_id: string | null;
+  host_id: string | null;
+  topic_score: number;
+  design_score: number;
+  total_score: number;
+  weight: number;
+  confirmed_at: Date | null;
+}
+
+/** Every evaluation score recorded for a room (used to assert collection/confirm). */
+export async function readEvaluationScores(
+  roomId: string,
+): Promise<EvaluationScoreRow[]> {
+  const result = await getPool().query<EvaluationScoreRow>(
+    `SELECT id, target_team_id, evaluator_type, evaluator_team_id, host_id,
+            topic_score, design_score, total_score, weight, confirmed_at
+     FROM evaluation_scores WHERE room_id = $1`,
+    [roomId],
+  );
+  return result.rows;
+}
+
 export async function closeDbReadPool(): Promise<void> {
   if (pool) {
     await pool.end();

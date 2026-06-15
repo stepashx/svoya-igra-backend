@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { AppConfigService } from '../config/app-config.service';
 import { CommerceModule } from '../commerce/commerce.module';
+import { EvaluationModule } from '../evaluation/evaluation.module';
 import { GameplayModule } from '../gameplay/gameplay.module';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
 import { PresentationModule } from '../presentation/presentation.module';
@@ -25,6 +26,7 @@ import {
   AdvanceOnTimeoutUseCase,
   CloseRoomUseCase,
   CloseShopUseCase,
+  ConfirmEvaluationUseCase,
   CreateRoomUseCase,
   CreateTeamUseCase,
   FinishPresentationUseCase,
@@ -45,6 +47,7 @@ import {
   StartGameUseCase,
   StartPresentationPreparationUseCase,
   SubmitAnswerUseCase,
+  SubmitEvaluationUseCase,
   UpdateProfileUseCase,
   UploadPresentationUseCase,
 } from './application/use-cases';
@@ -64,6 +67,7 @@ import {
 import {
   BoardController,
   DefenseController,
+  EvaluationController,
   GameController,
   InventoryController,
   PlayersController,
@@ -156,6 +160,15 @@ import {
  * there is NO new table, NO timer registry and NO new repository — the room/team
  * ports are already provided. The last presenter's finish/skip moves the room on
  * to EVALUATION (parked until 10.2).
+ *
+ * Sub-stage 10.2 imports {@link EvaluationModule} for the score-collection seam
+ * (the two evaluation repository ports + the {@link EvaluationQueryService},
+ * Design A — exactly as Commerce/Presentation) and wires the
+ * {@link EvaluationController} plus the Submit/Confirm use cases, all emitting
+ * `server:evaluation:*` room-wide (counts-only — the §16.8 secrecy). There is no
+ * StartEvaluation: the room auto-entered EVALUATION when the last defense
+ * finished (10.1). Aggregation (presentationScoreRaw / finalScore / places) is
+ * Stage 10.3 — `final_results` and the EVALUATION → RESULTS edge stay untouched.
  */
 @Module({
   imports: [
@@ -164,6 +177,7 @@ import {
     GameplayModule,
     CommerceModule,
     PresentationModule,
+    EvaluationModule,
     // Presentation upload (9.3): in-memory multipart with a size limit and an
     // extension-only fileFilter (BadRequestException → 400). AppConfigService is
     // globally available, so the async factory injects it directly.
@@ -190,6 +204,9 @@ import {
     // Presentation defense (sub-stage 10.1; Defense tag): host start/finish/skip
     // + the public derived state read.
     DefenseController,
+    // Evaluation collection (sub-stage 10.2; Evaluation tag): captain/host submit
+    // + confirm, public criteria/teams/progress reads.
+    EvaluationController,
   ],
   providers: [
     // Persistence ports → Drizzle adapters.
@@ -245,6 +262,11 @@ import {
     StartDefenseUseCase,
     FinishPresentationUseCase,
     SkipPresenterUseCase,
+    // Evaluation collection (sub-stage 10.2): captain/host submit + confirm. The
+    // two evaluation ports + the EvaluationQueryService come from the imported
+    // EvaluationModule (Design A — exactly as commerce/presentation).
+    SubmitEvaluationUseCase,
+    ConfirmEvaluationUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,

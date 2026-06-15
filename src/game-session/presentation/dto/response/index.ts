@@ -15,3 +15,5 @@ export * from './commerce.response';
 export * from './presentation.response';
 // Defense response DTOs (sub-stage 10.1).
 export * from './defense.response';
+// Evaluation response DTOs (sub-stage 10.2).
+export * from './evaluation.response';

@@ -154,4 +154,18 @@ export class LobbyQueryService {
       order,
     };
   }
+
+  /**
+   * The teams to evaluate in the EVALUATION stage (§15.11) — the participants
+   * (non-null `turnOrder`) ascending, the SAME projection the defense order
+   * uses. Lives here, not on the headless {@link EvaluationQueryService}: that
+   * service cannot read teams (EvaluationModule must not import game-session),
+   * exactly the reason {@link getDefenseState} lives here too. Pure read.
+   */
+  async listTeamsToEvaluate(code: string): Promise<Team[]> {
+    const room = await this.getRoom(code);
+    return (await this.teams.findByRoomId(room.id))
+      .filter((team) => team.turnOrder !== null)
+      .sort((a, b) => (a.turnOrder ?? 0) - (b.turnOrder ?? 0));
+  }
 }

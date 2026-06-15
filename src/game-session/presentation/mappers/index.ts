@@ -14,3 +14,5 @@ export * from './commerce.presentation-mapper';
 export * from './presentation.presentation-mapper';
 // Defense presentation mappers (sub-stage 10.1).
 export * from './defense.presentation-mapper';
+// Evaluation presentation mappers (sub-stage 10.2).
+export * from './evaluation.presentation-mapper';

@@ -13,3 +13,5 @@ export * from './inventory.controller';
 export * from './presentation.controller';
 // Presentation defense (sub-stage 10.1) — Defense tag, game-session owned.
 export * from './defense.controller';
+// Evaluation collection (sub-stage 10.2) — Evaluation tag, game-session owned.
+export * from './evaluation.controller';

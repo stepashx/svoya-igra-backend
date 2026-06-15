@@ -10,3 +10,6 @@ export * from './submit-answer.request';
 export * from './review-answer.request';
 // Commerce request DTOs (sub-stage 8.3).
 export * from './purchase-item.request';
+// Evaluation request DTOs (sub-stage 10.2).
+export * from './submit-evaluation.request';
+export * from './confirm-evaluation.request';

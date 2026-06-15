@@ -528,6 +528,74 @@ in kebab-case (camelCase split on case, e.g. `teamStarted` → `team-started`).
   on the last one — `finished` (`nextStage` = EVALUATION). EVALUATION is parked
   until Stage 10.2; the `EVALUATION → RESULTS → FINISHED` edges arrive with 10.3.
 
+### Evaluation — server broadcasts (§16.8)
+
+Catalog of the §16.8 "evaluation collection" broadcasts. The constants live in
+`src/game-session/application/events/evaluation-events.ts` (next to the
+game-session use cases that emit them, Design A — exactly as
+commerce/presentation/defense); the evaluation module itself emits nothing.
+**Sub-stage 10.2 emits all three** — SubmitEvaluation records a score,
+ConfirmEvaluation freezes it. Every row is **room-wide**, and — the defining
+rule here — **carries NO numeric score** (§16.8 "intrigue": the running tallies
+stay secret until results, 10.3). The **Status** column records each name's
+disposition.
+
+| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+|---|---|---|---|---|---|---|
+| `server:evaluation:score-submitted` | server | evaluation | room | A captain/host submitted (or re-submitted) one score | §16.8 | Emitted since 10.2 by SubmitEvaluationUseCase (captain `POST team` / host `POST host`), FIRST of the submit pair; payload `{ roomId, targetTeamId, evaluatorType, evaluatorTeamId, created }` — **no numeric score** (`evaluatorTeamId` null for a host) |
+| `server:evaluation:score-confirmed` | server | evaluation | room | A captain/host confirmed (froze) one score | §16.8 | Emitted since 10.2 by ConfirmEvaluationUseCase (`POST team/confirm` / `POST host/confirm`), FIRST of the confirm group — one per frozen row (per-target: exactly one; all-at-once: one per remaining draft); payload `{ roomId, targetTeamId, evaluatorType, evaluatorTeamId }` — **no numeric score** |
+| `server:evaluation:progress-updated` | server | evaluation | room | The running tally changed | §16.8 | Emitted since 10.2 by Submit (always) and Confirm (only when something was frozen), AFTER the score event(s); payload `{ roomId, team, host, totalExpected, complete }` where `team`/`host` are `{ submitted, confirmed, expected }` — **counts only** |
+| `server:evaluation:completed` | server | evaluation | room | All scores confirmed | §16.8 | **Reserved — Stage 10.3** (aggregation). Not emitted in 10.2; `complete` is derived in `progress-updated` but never acted upon |
+| `server:evaluation:results-*` | server | evaluation | room | Final scores / places | §14.10 | **Reserved — Stage 10.3** (presentationScoreRaw / finalScore / places / tie-break). Not defined in 10.2 |
+
+### Plan name → canonical name (§16.8)
+
+Same derivation as §16.1–16.7: a plan token `x:y` becomes `server:evaluation:x-y`
+in kebab-case (camelCase split on case, e.g. `scoreSubmitted` → `score-submitted`).
+
+| Plan name (§16.8) | Canonical name |
+|---|---|
+| `evaluation:scoreSubmitted` | `server:evaluation:score-submitted` |
+| `evaluation:scoreConfirmed` | `server:evaluation:score-confirmed` |
+| `evaluation:progressUpdated` | `server:evaluation:progress-updated` |
+
+### Evaluation contract notes (§16.8)
+
+- **Numbers are PRIVATE until results (the §16.8 "intrigue").** No broadcast and
+  no progress payload carries a numeric score — only ids, the `created` flag, and
+  the `{ submitted, confirmed, expected }` counts. The author's OWN numbers come
+  back exclusively in their REST reply (`POST team`/`host` echoes the submitted
+  `EvaluationScore`); there is deliberately NO GET surface for another evaluator's
+  scores until Stage 10.3. `GET rooms/:code/evaluation/progress` is counts-only.
+- **No StartEvaluation, no `started` event.** The room AUTO-entered EVALUATION
+  when the last presenter's defense finished (10.1 `defense:finished`,
+  PRESENTATION_DEFENSE → EVALUATION), so 10.2 adds no start action and no
+  `started` broadcast (it would be additive later if ever needed).
+- **Evaluator never trusted from the body.** A TEAM vote's `evaluatorTeamId` is
+  derived from the acting captain's own team (captain-authz + a symmetric
+  cross-tenant guard); a HOST vote's identity from `room.hostId`. A team can never
+  score itself (`SelfEvaluationError` 403, before any write; the entity backstops
+  the same shape).
+- **Create-or-update + immutable confirm, under the per-room advisory lock** (the
+  FIRST statement of each transaction). Re-submitting an unconfirmed score
+  overwrites it; a confirmed score is frozen (`EvaluationAlreadyConfirmedError`
+  409). Confirm has TWO granularities: per-target (STRICT — 404 if no draft, 409
+  if already confirmed) and all-at-once (omit `targetTeamId` — freezes only the
+  evaluator's remaining drafts, skipping already-confirmed rows so a per-target
+  pass then an all-at-once finish never deadlocks; idempotent when nothing is
+  left). The insert's unique-index 23505 is a defensive net only.
+- **Emission order is fixed.** Submit: `score-submitted` then `progress-updated`.
+  Confirm: one `score-confirmed` per frozen row, then a single `progress-updated`
+  (skipped entirely when an all-at-once confirmed nothing).
+- **All room-wide, no client commands.** There is no `client:evaluation:*`
+  surface: every mutation is a REST action — `POST rooms/:code/evaluation/{team,
+  host}` and `.../{team,host}/confirm` (PlayerIdentityGuard / HostAuthGuard, 200)
+  — and `GET rooms/:code/evaluation/{criteria,teams,progress}` are the open reads.
+- **EVALUATION stays terminal in 10.2.** This sub-stage changes no room stage and
+  adds no STAGE_FLOW edge; `final_results`, `markFinished`, and the
+  `EVALUATION → RESULTS → FINISHED` edges all arrive with Stage 10.3, together
+  with `evaluation:completed` / `results-*`.
+
 ## Stage 5.2a — what ships now
 
 Sub-stage 5.2a implements the lobby over **REST** and emits the room-wide

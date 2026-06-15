@@ -8,3 +8,4 @@ export * from './commerce-payloads';
 export * from './presentation-events';
 export * from './presentation-payloads';
 export * from './defense-events';
+export * from './evaluation-events';

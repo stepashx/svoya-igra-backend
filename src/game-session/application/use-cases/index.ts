@@ -32,3 +32,6 @@ export * from './start-defense.use-case';
 export * from './finish-presentation.use-case';
 export * from './skip-presenter.use-case';
 export type { DefenseAdvanceResult } from './defense-advance';
+// Evaluation collection (sub-stage 10.2).
+export * from './submit-evaluation.use-case';
+export * from './confirm-evaluation.use-case';
