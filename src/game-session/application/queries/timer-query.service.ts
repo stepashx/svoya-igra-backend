@@ -7,16 +7,20 @@ import { RoomCode } from '../../domain/value-objects';
 import {
   AnswerTimerRegistry,
   AnswerTimerState,
+  PresentationTimerRegistry,
+  PresentationTimerState,
   ShopTimerRegistry,
   ShopTimerState,
 } from '../timers';
 
 /**
- * Read model for the GET-timer endpoints (plan §15.7 answer, §15.8 shop).
- * Resolves the room from its code (invalid → InvalidRoomCodeError, missing →
- * RoomNotFoundError) and returns the lazy registry read — answer
- * ({@link AnswerTimerRegistry}) or shop ({@link ShopTimerRegistry}, 8.2) —
- * against the current clock. Pure query — no mutation, no events.
+ * Read model for the GET-timer endpoints (plan §15.7 answer, §15.8 shop, §15.10
+ * presentation deadline). Resolves the room from its code (invalid →
+ * InvalidRoomCodeError, missing → RoomNotFoundError) and returns the lazy
+ * registry read — answer ({@link AnswerTimerRegistry}), shop
+ * ({@link ShopTimerRegistry}, 8.2) or preparation
+ * ({@link PresentationTimerRegistry}, 9.2) — against the current clock. Pure
+ * query — no mutation, no events.
  */
 @Injectable()
 export class TimerQueryService {
@@ -25,6 +29,7 @@ export class TimerQueryService {
     @Inject(CLOCK_PORT) private readonly clock: ClockPort,
     private readonly timer: AnswerTimerRegistry,
     private readonly shopTimer: ShopTimerRegistry,
+    private readonly presentationTimer: PresentationTimerRegistry,
   ) {}
 
   async read(code: string): Promise<AnswerTimerState> {
@@ -36,6 +41,12 @@ export class TimerQueryService {
   async readShop(code: string): Promise<ShopTimerState> {
     const room = await this.resolveRoom(code);
     return this.shopTimer.read(room.id, this.clock.now());
+  }
+
+  /** The room's presentation-preparation timer / deadline (9.2). */
+  async readPresentation(code: string): Promise<PresentationTimerState> {
+    const room = await this.resolveRoom(code);
+    return this.presentationTimer.read(room.id, this.clock.now());
   }
 
   private async resolveRoom(code: string): Promise<Room> {

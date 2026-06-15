@@ -151,6 +151,17 @@ export class Team {
     return this._balance.value >= price;
   }
 
+  /**
+   * Link the team to its (latest) presentation submission (§9.3). A plain
+   * overwrite, NOT assign-once: a re-upload reuses the same submission id and
+   * re-attaches it, and the row is replaced in place — so there is no second
+   * distinct submission to guard against. The authoritative submission row
+   * carries its own (room, team) uniqueness; this is the denormalised link.
+   */
+  attachSubmission(submissionId: string): void {
+    this._presentationSubmissionId = submissionId;
+  }
+
   get id(): string {
     return this._id;
   }

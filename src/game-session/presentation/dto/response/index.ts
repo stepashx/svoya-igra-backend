@@ -11,3 +11,5 @@ export * from './question.response';
 export * from './shop.response';
 // Purchase/inventory/QR response DTOs (sub-stage 8.3).
 export * from './commerce.response';
+// Presentation response DTOs (sub-stage 9.1).
+export * from './presentation.response';

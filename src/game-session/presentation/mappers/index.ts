@@ -10,3 +10,5 @@ export * from './question.presentation-mapper';
 export * from './shop.presentation-mapper';
 // Purchase/inventory/QR presentation mappers (sub-stage 8.3).
 export * from './commerce.presentation-mapper';
+// Presentation-feature presentation mappers (sub-stage 9.1).
+export * from './presentation.presentation-mapper';

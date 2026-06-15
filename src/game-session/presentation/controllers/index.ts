@@ -9,3 +9,5 @@ export * from './questions.controller';
 // Shop/inventory 501 stubs (sub-stage 8.1) — Commerce tag, game-session owned.
 export * from './shop.controller';
 export * from './inventory.controller';
+// Presentation: real GET requirements + 501 stubs (sub-stage 9.1) — Presentation tag.
+export * from './presentation.controller';

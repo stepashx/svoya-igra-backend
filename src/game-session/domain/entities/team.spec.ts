@@ -173,4 +173,21 @@ describe('Team', () => {
       expect(team.canAfford(500)).toBe(false);
     });
   });
+
+  describe('attachSubmission (§9.3 presentation link)', () => {
+    it('sets the presentation submission id', () => {
+      const team = makeTeam();
+      expect(team.presentationSubmissionId).toBeNull();
+      team.attachSubmission('sub-1');
+      expect(team.presentationSubmissionId).toBe('sub-1');
+    });
+
+    it('plainly OVERWRITES on a re-upload (no assign-once guard)', () => {
+      const team = makeTeam();
+      team.attachSubmission('sub-1');
+      // A replace reuses the same id; even a different id just overwrites.
+      expect(() => team.attachSubmission('sub-2')).not.toThrow();
+      expect(team.presentationSubmissionId).toBe('sub-2');
+    });
+  });
 });

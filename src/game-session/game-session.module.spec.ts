@@ -45,7 +45,11 @@ import {
   RoomSnapshotAssembler,
   TimerQueryService,
 } from './application/queries';
-import { AnswerTimerRegistry, ShopTimerRegistry } from './application/timers';
+import {
+  AnswerTimerRegistry,
+  PresentationTimerRegistry,
+  ShopTimerRegistry,
+} from './application/timers';
 import {
   AdvanceOnTimeoutUseCase,
   CloseRoomUseCase,
@@ -65,6 +69,7 @@ import {
   SelectQuestionUseCase,
   SelectTopicUseCase,
   StartGameUseCase,
+  StartPresentationPreparationUseCase,
   SubmitAnswerUseCase,
   UpdateProfileUseCase,
 } from './application/use-cases';
@@ -218,6 +223,12 @@ describe('GameSessionModule wiring', () => {
         CloseShopUseCase,
         // Purchase/inventory providers (8.3), mirroring the module.
         PurchaseItemUseCase,
+        // Presentation preparation providers (9.2), mirroring the module. The
+        // PresentationController is wired in the e2e/controller specs (it pulls
+        // PresentationQueryService from PresentationModule); here we mirror only
+        // the game-session-owned providers so TimerQueryService resolves.
+        PresentationTimerRegistry,
+        StartPresentationPreparationUseCase,
         RoomSnapshotAssembler,
         LobbyQueryService,
         TimerQueryService,
@@ -358,6 +369,17 @@ describe('GameSessionModule wiring', () => {
     );
     expect(moduleRef.get(InventoryQueryService)).toBeInstanceOf(
       InventoryQueryService,
+    );
+    await moduleRef.close();
+  });
+
+  it('instantiates the presentation preparation timer and start use case (9.2)', async () => {
+    const moduleRef = await buildModule();
+    expect(moduleRef.get(PresentationTimerRegistry)).toBeInstanceOf(
+      PresentationTimerRegistry,
+    );
+    expect(moduleRef.get(StartPresentationPreparationUseCase)).toBeInstanceOf(
+      StartPresentationPreparationUseCase,
     );
     await moduleRef.close();
   });

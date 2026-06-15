@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
+import { MulterModule } from '@nestjs/platform-express';
+import { AppConfigService } from '../config/app-config.service';
 import { CommerceModule } from '../commerce/commerce.module';
 import { GameplayModule } from '../gameplay/gameplay.module';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
+import { PresentationModule } from '../presentation/presentation.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import {
   HOST_REALTIME_EVENTS_PORT,
@@ -13,7 +16,11 @@ import {
   RoomSnapshotAssembler,
   TimerQueryService,
 } from './application/queries';
-import { AnswerTimerRegistry, ShopTimerRegistry } from './application/timers';
+import {
+  AnswerTimerRegistry,
+  PresentationTimerRegistry,
+  ShopTimerRegistry,
+} from './application/timers';
 import {
   AdvanceOnTimeoutUseCase,
   CloseRoomUseCase,
@@ -33,8 +40,10 @@ import {
   SelectQuestionUseCase,
   SelectTopicUseCase,
   StartGameUseCase,
+  StartPresentationPreparationUseCase,
   SubmitAnswerUseCase,
   UpdateProfileUseCase,
+  UploadPresentationUseCase,
 } from './application/use-cases';
 import {
   PLAYER_REPOSITORY_PORT,
@@ -54,6 +63,7 @@ import {
   GameController,
   InventoryController,
   PlayersController,
+  PresentationController,
   QuestionsController,
   RoomsController,
   ShopController,
@@ -63,6 +73,7 @@ import {
 import {
   HostAuthGuard,
   PlayerIdentityGuard,
+  presentationMulterOptions,
   TeamMemberOrHostGuard,
 } from './presentation/http';
 import {
@@ -116,6 +127,21 @@ import {
  * {@link CloseShopUseCase}, and the real shop items/round/close endpoints —
  * the catalog read model (ShopQueryService) comes from the imported
  * {@link CommerceModule}. Purchases stay 501 until 8.3.
+ *
+ * Sub-stage 9.1 imports {@link PresentationModule} for the presentation seam
+ * (the two presentation repository ports + the requirements read model, Design
+ * A — exactly as CommerceModule) and ships the {@link PresentationController}:
+ * the real GET requirements plus the deadline/upload/replace/submissions/files
+ * 501 stubs. The preparation timer, upload use case, and `server:presentation:*`
+ * emission arrive in 9.2/9.3.
+ *
+ * Sub-stage 9.2 wires the preparation surface: the in-memory
+ * {@link PresentationTimerRegistry} and {@link StartPresentationPreparationUseCase}
+ * (the first §16.6 emitter — `preparation-started` + `timer-started`, room-wide
+ * and public), plus the real GET deadline / submissions reads (the submission
+ * read model comes from the imported PresentationModule). The room is already in
+ * PRESENTATION_PREPARATION (the 8.2 final-shop close parked it there), so the
+ * use case changes no room state. Upload/replace/files stay 501 until 9.3.
  */
 @Module({
   imports: [
@@ -123,6 +149,14 @@ import {
     RealtimeModule,
     GameplayModule,
     CommerceModule,
+    PresentationModule,
+    // Presentation upload (9.3): in-memory multipart with a size limit and an
+    // extension-only fileFilter (BadRequestException → 400). AppConfigService is
+    // globally available, so the async factory injects it directly.
+    MulterModule.registerAsync({
+      inject: [AppConfigService],
+      useFactory: presentationMulterOptions,
+    }),
   ],
   controllers: [
     RoomsController,
@@ -136,6 +170,9 @@ import {
     // Shop/inventory 501 stubs (sub-stage 8.1; Commerce tag).
     ShopController,
     InventoryController,
+    // Presentation: GET requirements (9.1) + preparation deadline/submissions
+    // reads and host start-preparation (9.2); upload/files 501 until 9.3.
+    PresentationController,
   ],
   providers: [
     // Persistence ports → Drizzle adapters.
@@ -175,6 +212,15 @@ import {
     // repository ports it needs and the InventoryQueryService come from the
     // imported CommerceModule.
     PurchaseItemUseCase,
+    // Presentation preparation (sub-stage 9.2): the in-memory preparation timer
+    // and the host start; the requirement/submission reads come from the
+    // imported PresentationModule (PresentationQueryService).
+    PresentationTimerRegistry,
+    StartPresentationPreparationUseCase,
+    // Presentation upload (sub-stage 9.3): the captain's two-phase upload/replace
+    // (FILE_STORAGE_PORT comes transitively from InfrastructureModule, the
+    // submission port from the imported PresentationModule).
+    UploadPresentationUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,

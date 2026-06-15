@@ -91,6 +91,44 @@ export async function readInventoryItems(
   return result.rows;
 }
 
+/** A persisted presentation submission, narrowed to the fields the 9.3 e2e asserts. */
+export interface SubmissionRow {
+  id: string;
+  team_id: string;
+  uploaded_by_player_id: string | null;
+  original_file_name: string;
+  mime_type: string;
+  file_size: number;
+  storage_key: string;
+  public_url: string;
+  is_late: boolean;
+  late_penalty: number;
+  status: string;
+}
+
+/** Every presentation submission recorded for a room (used to assert the upload). */
+export async function readSubmissions(
+  roomId: string,
+): Promise<SubmissionRow[]> {
+  const result = await getPool().query<SubmissionRow>(
+    `SELECT id, team_id, uploaded_by_player_id, original_file_name, mime_type,
+            file_size, storage_key, public_url, is_late, late_penalty, status
+     FROM presentation_submissions WHERE room_id = $1`,
+    [roomId],
+  );
+  return result.rows;
+}
+
+/** A team's denormalised presentation-submission link, or `null` if unset/gone. */
+export async function readTeamSubmissionId(
+  teamId: string,
+): Promise<string | null> {
+  const result = await getPool().query<{
+    presentation_submission_id: string | null;
+  }>('SELECT presentation_submission_id FROM teams WHERE id = $1', [teamId]);
+  return result.rows[0]?.presentation_submission_id ?? null;
+}
+
 export async function closeDbReadPool(): Promise<void> {
   if (pool) {
     await pool.end();

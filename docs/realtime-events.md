@@ -50,9 +50,9 @@ identity and the state snapshot is the `ReconnectClient` use case (Stage 5B).
 
 ## Feature events
 
-Game Session names (Lobby and Game start), the Gameplay catalog (§16.4) and the
-Commerce catalog (§16.5) are below. Presentation and Evaluation rows are filled
-in as each feature lands.
+Game Session names (Lobby and Game start), the Gameplay catalog (§16.4), the
+Commerce catalog (§16.5) and the Presentation catalog (§16.6) are below. The
+Evaluation rows are filled in as that feature lands.
 
 **Name contract only.** This catalog fixes the canonical name, direction, area,
 and audience of each event. Payload schemas and the actual emission wiring are
@@ -355,6 +355,110 @@ in kebab-case (camelCase split on case, e.g. `finalOpened` → `final-opened`,
   `TeamMemberOrHostGuard` is correct for the membership it sees; the fix —
   gating Join/LeaveTeam to the LOBBY stage — is tracked as a separate Stage 5
   task and intentionally out of 8.3 scope.
+
+### Presentation — server broadcasts (§16.6)
+
+Catalog of the §16.6 "presentation preparation" broadcasts. The constants live
+in `src/game-session/application/events/presentation-events.ts` (next to the
+game-session use cases that emit them, Design A). Sub-stage 9.1 fixed the name /
+direction / area / audience contract only (no emission); sub-stage 9.2 wired the
+preparation pair (`preparation-started` + `timer-started` from
+`StartPresentationPreparationUseCase`); **sub-stage 9.3 completes the chain** —
+`submission-uploaded` / `submission-replaced`, `submission-late`, and
+`files-updated` fire from `UploadPresentationUseCase`. The **Status** column
+records each name's disposition. Every row is **room-wide** (see _Presentation
+contract notes_ for why there is no secrecy here).
+
+| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+|---|---|---|---|---|---|---|
+| `server:presentation:preparation-started` | server | presentation | room | Preparation opened (the room is already in PRESENTATION_PREPARATION) | §16.6 | Emitted since 9.2 by StartPresentationPreparationUseCase (host `POST start-preparation`), FIRST of the pair; payload `{ roomId, stage }` (`stage` = PRESENTATION_PREPARATION) |
+| `server:presentation:requirements-updated` | server | presentation | room | Requirements catalog shown/updated for preparation | §16.6 | Reserved — the requirements catalog is static (seed-managed): read via `GET requirements`, never pushed (no emitter planned) |
+| `server:presentation:timer-started` | server | presentation | room | Preparation timer started (deadline/endsAt set) | §16.6 | Emitted since 9.2 by StartPresentationPreparationUseCase, right AFTER `preparation-started`; payload `{ roomId, startedAt, endsAt }`. A repeat start REPLACES the timer and re-emits both |
+| `server:presentation:timer-ended` | server | presentation | room | Preparation timer elapsed | §16.6 | Reserved — no server scheduler; the EXPIRED deadline surfaces lazily via `GET deadline` (the §16.4 answer-timer precedent), never pushed |
+| `server:presentation:submission-uploaded` | server | presentation | room | A team uploaded its presentation file (publicUrl allowed — file is public) | §16.6 | Emitted since 9.3 by UploadPresentationUseCase (captain `POST upload`), AFTER commit, FIRST of the chain; payload `{ roomId, teamId, submission: { id, originalFileName, mimeType, fileSize, status, isLate, uploadedAt, publicUrl } }`. `mimeType` is the SERVER-canonical MIME from the extension (never the client type, B2) |
+| `server:presentation:submission-replaced` | server | presentation | room | A team replaced its presentation file | §16.6 | Emitted since 9.3 by UploadPresentationUseCase (captain `PUT upload`, or `POST` over an existing row — ONE upsert use case), AFTER commit; SAME payload as `submission-uploaded`. The submission id and storage key are REUSED (overwrite in place; same-extension re-uploads leave no orphan) |
+| `server:presentation:submission-late` | server | presentation | room | An upload landed after the deadline (status LATE, late penalty applies) | §16.6 | Emitted since 9.3 by UploadPresentationUseCase AFTER commit, ONLY when the upload was late (`isLate`); payload `{ roomId, teamId, submissionId, latePenalty }`. `latePenalty` = the EFFECTIVE penalty (the configured `LATE_PENALTY`, default 1; see note) |
+| `server:presentation:submission-status-changed` | server | presentation | room | A submission's status changed (UPLOADED ⟷ LATE bookkeeping) | §16.6 | **Superseded** (never emitted) — the status is fixed once at create and a replace is a fresh create, so there is no UPLOADED⟷LATE transition to announce. The constant is retained for the §16.6 catalog, exactly like the unemitted `shop-purchase-rejected` (§16.5) |
+| `server:presentation:files-updated` | server | presentation | room | The room's presentation file list changed (public links) | §16.6 | Emitted since 9.3 by UploadPresentationUseCase AFTER commit, LAST of the chain; payload `{ roomId, files: [{ teamId, originalFileName, mimeType, fileSize, publicUrl, status, isLate, uploadedAt }] }` — the whole room catalog, the SAME projection as `GET files` |
+
+### Plan name → canonical name (§16.6)
+
+Same derivation as §16.1–16.5: a plan token `x:y` becomes
+`server:presentation:x-y` in kebab-case (camelCase split on case, e.g.
+`preparationStarted` → `preparation-started`, `submissionStatusChanged` →
+`submission-status-changed`).
+
+| Plan name (§16.6) | Canonical name |
+|---|---|
+| `presentation:preparationStarted` | `server:presentation:preparation-started` |
+| `presentation:requirementsUpdated` | `server:presentation:requirements-updated` |
+| `presentation:timerStarted` | `server:presentation:timer-started` |
+| `presentation:timerEnded` | `server:presentation:timer-ended` |
+| `presentation:submissionUploaded` | `server:presentation:submission-uploaded` |
+| `presentation:submissionReplaced` | `server:presentation:submission-replaced` |
+| `presentation:submissionLate` | `server:presentation:submission-late` |
+| `presentation:submissionStatusChanged` | `server:presentation:submission-status-changed` |
+| `presentation:filesUpdated` | `server:presentation:files-updated` |
+
+### Presentation contract notes (§16.6)
+
+- **Presentation files are PUBLIC — the deliberate OPPOSITE of the §16.5 QR
+  secrecy.** Per Этап2 §10.15, a team's uploaded file is seen by the host AND
+  the other teams. So presentation payloads MAY carry a file's `publicUrl`
+  room-wide, every one of the nine events is room-audience, and there is
+  **nothing to hide**. Sub-stage 9.3 therefore does NOT apply the §16.5 R3-style
+  team-gating to these events — that gating exists only to keep a purchased QR
+  secret, and a public presentation file has no such secret. Do not copy the
+  commerce privacy pattern here by inertia.
+- **No client commands.** There is no `client:presentation:*` command surface.
+  Upload and replace are REST multipart calls (§15.10, sub-stage 9.3); the host
+  starts the preparation timer over REST — `POST rooms/:code/presentation/start-preparation`
+  (HostAuthGuard, 200), the REST trigger for the §16.6 pair (sub-stage 9.2). The
+  broadcasts above are the only presentation transport, server → client only.
+- **9.2 emits the preparation pair; 9.3 the submission/files chain.** Sub-stage
+  9.1 shipped the skeleton (read models, the submission fact, the two
+  repositories, the exported ports, the real `GET requirements`) and emitted
+  nothing. Sub-stage 9.2 wires `preparation-started` then `timer-started` from
+  `StartPresentationPreparationUseCase` (room-wide, public, IN-transaction) and
+  the public `GET deadline` / `GET submissions` reads. The room is ALREADY in
+  PRESENTATION_PREPARATION (the 8.2 final-shop close parked it there), so — unlike
+  CloseShop — the use case changes NO room state (no Room mutator, no
+  `rooms.update`, STAGE_FLOW untouched: the exit to PRESENTATION_DEFENSE lands in
+  Stage 10). A repeat start REPLACES the in-memory timer with fresh stamps and
+  re-emits both (clients resync, no error). 9.3 wires the submission/files
+  broadcasts (exactly as 8.1 → 8.2/8.3 for commerce).
+- **9.3 upload chain — order and timing.** `UploadPresentationUseCase` is a
+  TWO-PHASE upsert: the bytes stream to MinIO OUTSIDE the transaction/lock (so a
+  25 MB upload never holds a pooled connection — recon M1), then a short
+  locked transaction persists the row. The broadcasts fire AFTER commit (they
+  carry the `publicUrl` of a now-durable row, the 8.3 `inventory-updated`
+  precedent), in a fixed order: `submission-uploaded` OR `submission-replaced`
+  first, then `submission-late` (iff the upload was late), then `files-updated`
+  LAST. All are room-wide and public; there is no team-gated channel here.
+- **Stored MIME is server-canonical, not the client type (B2).** The persisted
+  `mimeType` (and the response `Content-Type`, plus `Content-Disposition:
+  attachment`) is derived from the file EXTENSION — a public-read bucket must
+  never serve a `.pdf` full of HTML as `text/html`. The storage key likewise
+  uses only an allowlisted extension token, never the raw filename (C).
+- **`LATE_PENALTY` is 1 (env), not the plan's 2.** The operator kept the `.env`
+  default `LATE_PENALTY=1`; `submission-late.latePenalty` and the persisted
+  EFFECTIVE penalty therefore carry 1 when late, 0 when on time. Stage 10 applies
+  `max(0, rawScore − latePenalty)`.
+- **`submission-status-changed` is Superseded.** The status is decided once at
+  create (UPLOADED vs LATE) and a replace is a fresh create — there is no
+  in-place status transition, so the event has no trigger. The constant stays in
+  the catalog like the unemitted `shop-purchase-rejected`.
+- **Orphan / separate-origin are Stage-11 debts (MVP).** Changing the file's
+  extension on a replace leaves the old object behind (the port has no `delete`);
+  and the public bucket shares the API origin, so the `Content-Disposition`
+  attachment guard — not a separate asset host — is what neutralises stored XSS
+  for now. Both are accepted MVP compromises, hardened in Stage 11.
+- **The preparation timer is in-memory, no scheduler.** Like the answer (§16.4)
+  and shop (§16.5) timers, the deadline is a lazy `ClockPort` comparison in
+  `PresentationTimerRegistry`: `GET deadline` returns RUNNING/EXPIRED/IDLE
+  against `now`, and `timer-ended` is never pushed (the EXPIRED read is the
+  signal). No DB column; state does not survive a process restart (single-node
+  MVP). `requirements-updated` is likewise never pushed — the catalog is static.
 
 ## Stage 5.2a — what ships now
 

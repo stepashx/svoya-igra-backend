@@ -1,5 +1,9 @@
 import { ShopItem } from '../../../commerce/domain/entities';
-import { ShopTimerState } from '../../application/timers';
+import { PresentationSubmission } from '../../../presentation/domain/entities';
+import {
+  PresentationTimerState,
+  ShopTimerState,
+} from '../../application/timers';
 import {
   FIXED_NOW,
   makePlayer,
@@ -11,6 +15,10 @@ import {
   toCreateRoomResponse,
   toPlayerIdentityResponse,
   toPlayerResponse,
+  toPresentationDeadlineResponse,
+  toPresentationFileResponse,
+  toPresentationSubmissionStatusResponse,
+  toPresentationUploadResultResponse,
   toRoomResponse,
   toRoomStateResponse,
   toShopItemResponse,
@@ -159,6 +167,130 @@ describe('presentation mappers', () => {
         runningTimer,
       );
       expect(final.isFinalShop).toBe(true);
+    });
+  });
+
+  describe('presentation mappers (9.2)', () => {
+    it('renders a RUNNING preparation deadline with ISO stamps', () => {
+      const timer: PresentationTimerState = {
+        status: 'RUNNING',
+        startedAt: new Date('2026-06-14T12:00:00.000Z'),
+        endsAt: new Date('2026-06-14T12:10:00.000Z'),
+        remainingMs: 600_000,
+      };
+      expect(toPresentationDeadlineResponse(timer)).toEqual({
+        status: 'RUNNING',
+        startedAt: '2026-06-14T12:00:00.000Z',
+        endsAt: '2026-06-14T12:10:00.000Z',
+        remainingMs: 600_000,
+      });
+    });
+
+    it('renders an IDLE preparation deadline with null stamps', () => {
+      expect(
+        toPresentationDeadlineResponse({
+          status: 'IDLE',
+          startedAt: null,
+          endsAt: null,
+          remainingMs: 0,
+        }),
+      ).toEqual({
+        status: 'IDLE',
+        startedAt: null,
+        endsAt: null,
+        remainingMs: 0,
+      });
+    });
+
+    it('maps a submission to its public status DTO (publicUrl included, §10.15)', () => {
+      const uploadedAt = new Date('2026-06-14T12:05:00.000Z');
+      const dto = toPresentationSubmissionStatusResponse(
+        PresentationSubmission.reconstitute({
+          id: 'sub-1',
+          roomId: 'room-1',
+          teamId: 'team-1',
+          uploadedByPlayerId: 'player-1',
+          originalFileName: 'deck.pdf',
+          mimeType: 'application/pdf',
+          fileSize: 2048,
+          storageProvider: 'minio',
+          bucket: 'presentations',
+          storageKey: 'room-1/team-1.pdf',
+          publicUrl: 'https://cdn.example/room-1/team-1.pdf',
+          uploadedAt,
+          deadlineAt: new Date('2026-06-14T12:10:00.000Z'),
+          isLate: true,
+          latePenalty: 5,
+          status: 'LATE',
+        }),
+      );
+      expect(dto).toEqual({
+        teamId: 'team-1',
+        status: 'LATE',
+        isLate: true,
+        uploadedAt: uploadedAt.toISOString(),
+        publicUrl: 'https://cdn.example/room-1/team-1.pdf',
+        originalFileName: 'deck.pdf',
+        fileSize: 2048,
+        latePenalty: 5,
+      });
+    });
+
+    const submissionFixture = () => {
+      const uploadedAt = new Date('2026-06-14T12:05:00.000Z');
+      return PresentationSubmission.reconstitute({
+        id: 'sub-1',
+        roomId: 'room-1',
+        teamId: 'team-1',
+        uploadedByPlayerId: 'player-1',
+        originalFileName: 'deck.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 2048,
+        storageProvider: 'minio',
+        bucket: 'presentations',
+        storageKey: 'room-1/team-1.pdf',
+        publicUrl: 'https://cdn.example/room-1/team-1.pdf',
+        uploadedAt,
+        deadlineAt: new Date('2026-06-14T12:10:00.000Z'),
+        isLate: false,
+        latePenalty: 0,
+        status: 'UPLOADED',
+      });
+    };
+
+    it('maps a submission to its public file DTO (§10.15)', () => {
+      const dto = toPresentationFileResponse(submissionFixture());
+      expect(dto).toEqual({
+        teamId: 'team-1',
+        originalFileName: 'deck.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 2048,
+        publicUrl: 'https://cdn.example/room-1/team-1.pdf',
+        status: 'UPLOADED',
+        isLate: false,
+        uploadedAt: '2026-06-14T12:05:00.000Z',
+      });
+    });
+
+    it('maps the upload use-case result to the flat captain reply', () => {
+      const submission = submissionFixture();
+      const dto = toPresentationUploadResultResponse({
+        submission,
+        publicUrl: submission.publicUrl,
+        isCreate: true,
+      });
+      expect(dto).toEqual({
+        isCreate: true,
+        teamId: 'team-1',
+        originalFileName: 'deck.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 2048,
+        status: 'UPLOADED',
+        isLate: false,
+        latePenalty: 0,
+        uploadedAt: '2026-06-14T12:05:00.000Z',
+        publicUrl: 'https://cdn.example/room-1/team-1.pdf',
+      });
     });
   });
 });

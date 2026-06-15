@@ -1,21 +1,60 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Client } from 'minio';
+import {
+  FileStoragePort,
+  PutPresentationParams,
+  StoredFileLocator,
+} from '../../core/ports';
 import { AppConfigService } from '../../config/app-config.service';
 import { STORAGE_CLIENT } from './storage.constants';
-import { buildPublicUrl } from './storage-key.helper';
+import { buildPublicUrl, presentationStorageKey } from './storage-key.helper';
 
 /**
  * Infrastructure entry point for the S3-compatible (MinIO) store. Exposes
- * public-URL construction and a read-only reachability probe for Health.
- * Actual upload/retrieval behavior arrives with the feature stages; this seam
- * never writes objects.
+ * public-URL construction, a read-only reachability probe for Health, and the
+ * first object write — {@link putPresentation}, the {@link FileStoragePort}
+ * implementation that persists an uploaded presentation file (Stage 9). The
+ * write path is exactly that one method; everything else stays read-only.
  */
 @Injectable()
-export class StorageService {
+export class StorageService implements FileStoragePort {
   constructor(
     @Inject(STORAGE_CLIENT) private readonly client: Client,
     private readonly config: AppConfigService,
   ) {}
+
+  /**
+   * Persist one uploaded presentation file under its room/team-scoped key and
+   * return the durable locator the upload use case stores on the submission
+   * row. Public bucket (MVP), so the returned `publicUrl` is room-readable.
+   *
+   * The object is written with two stored-XSS guards (recon B2): the
+   * `Content-Type` is the SERVER-canonical MIME the use case derived from the
+   * extension (never the client `mimetype`), and `Content-Disposition:
+   * attachment` forces the browser to download rather than render — so even a
+   * mislabelled HTML payload cannot execute when the public URL is opened.
+   */
+  async putPresentation(
+    params: PutPresentationParams,
+  ): Promise<StoredFileLocator> {
+    const bucket = this.config.storage.bucket;
+    const storageKey = presentationStorageKey({
+      roomId: params.roomId,
+      teamId: params.teamId,
+      submissionId: params.submissionId,
+      extension: params.extension,
+    });
+    await this.client.putObject(bucket, storageKey, params.body, params.size, {
+      'Content-Type': params.contentType,
+      'Content-Disposition': 'attachment',
+    });
+    return {
+      storageProvider: 'minio',
+      bucket,
+      storageKey,
+      publicUrl: this.buildPublicUrl(storageKey),
+    };
+  }
 
   /** Direct link the frontend opens for a stored object (public bucket, MVP). */
   buildPublicUrl(storageKey: string): string {
