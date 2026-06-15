@@ -15,8 +15,10 @@ const DEFAULT_TOTAL_QUESTIONS = 30;
  * lobby path (LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD) is linear; the
  * board loop branches — ANSWER_REVIEW returns to GAME_BOARD or enters SHOP, and
  * SHOP returns to GAME_BOARD or, once the board is exhausted, moves on to
- * PRESENTATION_PREPARATION (the final shop, 8.2). Later edges (presentation
- * flow, evaluation) arrive with their sub-stages.
+ * PRESENTATION_PREPARATION (the final shop, 8.2). The presentation phase is
+ * linear: PRESENTATION_PREPARATION → PRESENTATION_DEFENSE (StartDefense opens
+ * the defenses, 10.1) → EVALUATION (the last presenter finishes/skips, 10.1).
+ * The later edges (EVALUATION → RESULTS → FINISHED) arrive with Stage 10.3.
  */
 const STAGE_FLOW: Readonly<Partial<Record<GameStage, readonly GameStage[]>>> = {
   LOBBY: ['TEAM_SETUP'],
@@ -26,6 +28,8 @@ const STAGE_FLOW: Readonly<Partial<Record<GameStage, readonly GameStage[]>>> = {
   QUESTION_OPENED: ['ANSWER_REVIEW'],
   ANSWER_REVIEW: ['GAME_BOARD', 'SHOP'],
   SHOP: ['GAME_BOARD', 'PRESENTATION_PREPARATION'],
+  PRESENTATION_PREPARATION: ['PRESENTATION_DEFENSE'],
+  PRESENTATION_DEFENSE: ['EVALUATION'],
 };
 
 /** Fields required to start a brand-new room (caller-supplied id and identity). */

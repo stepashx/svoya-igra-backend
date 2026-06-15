@@ -460,6 +460,74 @@ Same derivation as §16.1–16.5: a plan token `x:y` becomes
   signal). No DB column; state does not survive a process restart (single-node
   MVP). `requirements-updated` is likewise never pushed — the catalog is static.
 
+### Defense — server broadcasts (§16.7)
+
+Catalog of the §16.7 "presentation defense" broadcasts. The constants live in
+`src/game-session/application/events/defense-events.ts` (next to the game-session
+use cases that emit them, Design A — exactly as commerce/presentation); there is
+no separate defense module. **Sub-stage 10.1 emits all five** — StartDefense
+opens the defenses, FinishPresentation / SkipPresenter advance the queue. The
+**Status** column records each name's disposition. Every row is **room-wide and
+PUBLIC** (see _Defense contract notes_ for why there is no secrecy here).
+
+| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+|---|---|---|---|---|---|---|
+| `server:defense:started` | server | defense | room | Defenses opened (PRESENTATION_PREPARATION → PRESENTATION_DEFENSE) — carries the whole presentation order | §16.7 | Emitted since 10.1 by StartDefenseUseCase (host `POST start`), FIRST of the start pair; payload `{ roomId, order }` (`order` = team ids, `turnOrder` ascending) |
+| `server:defense:team-started` | server | defense | room | The next presenter is on | §16.7 | Emitted since 10.1 by StartDefenseUseCase (the first presenter, right AFTER `started`) and by Finish/Skip (each subsequent presenter); payload `{ roomId, teamId }` |
+| `server:defense:team-finished` | server | defense | room | The current presenter's defense finished | §16.7 | Emitted since 10.1 by FinishPresentationUseCase (host `POST finish-presenter`), FIRST of the advance; payload `{ roomId, teamId }` (the presenter that just left) |
+| `server:defense:team-skipped` | server | defense | room | The host skipped the current presenter | §16.7 | Emitted since 10.1 by SkipPresenterUseCase (host `POST skip-presenter`), FIRST of the advance; payload `{ roomId, teamId }`. The ONLY difference from `team-finished` — same advance otherwise |
+| `server:defense:finished` | server | defense | room | The LAST presenter finished/skipped (PRESENTATION_DEFENSE → EVALUATION) | §16.7 | Emitted since 10.1 by Finish/Skip when there is no next presenter (end of the finite queue), in place of `team-started`; payload `{ roomId, nextStage }` (`nextStage` = EVALUATION) |
+
+### Plan name → canonical name (§16.7)
+
+Same derivation as §16.1–16.6: a plan token `x:y` becomes `server:defense:x-y`
+in kebab-case (camelCase split on case, e.g. `teamStarted` → `team-started`).
+
+| Plan name (§16.7) | Canonical name |
+|---|---|
+| `defense:started` | `server:defense:started` |
+| `defense:teamStarted` | `server:defense:team-started` |
+| `defense:teamFinished` | `server:defense:team-finished` |
+| `defense:teamSkipped` | `server:defense:team-skipped` |
+| `defense:finished` | `server:defense:finished` |
+
+### Defense contract notes (§16.7)
+
+- **The defense state is fully DERIVED — there is no defense table.** The current
+  presenter is `Room.currentTeamId` (the same pointer the battle turn uses) and
+  the order is the participating teams' `turnOrder` ascending (assigned at game
+  start, §14.5). 10.1 adds **no** schema, **no** in-memory registry — the state
+  lives in the existing columns and therefore survives a process restart
+  (`db:generate` stays "No schema changes"). The public `GET defense/state`
+  recomputes it on demand for reconnect/refresh.
+- **The queue is FINITE — no wrap (the key contrast with the battle turn).** The
+  battle turn is a round-robin that wraps with `% length` (review-answer
+  `moveToNextTurn`); the defense queue does NOT. `nextDefensePresenter` returns
+  `order[idx + 1] ?? null`, so past the last presenter there is no next team —
+  and that `null` is exactly what drives the `finished` broadcast and the
+  PRESENTATION_DEFENSE → EVALUATION exit.
+- **StartDefense MOVES the stage (like CloseShop, unlike the 9.2 prep start).**
+  The room is parked in PRESENTATION_PREPARATION after preparation/upload;
+  StartDefense validates that stage, `transitionTo('PRESENTATION_DEFENSE')`,
+  points the room at the first presenter and persists with `rooms.update` — two
+  new STAGE_FLOW edges (PRESENTATION_PREPARATION → PRESENTATION_DEFENSE →
+  EVALUATION). The 9.2 `start-preparation` changed no room state; this one does.
+- **Host-paced, no timer.** Unlike the answer (§16.4), shop (§16.5) and
+  preparation (§16.6) timers, there is NO defense timer/registry — the host drives
+  the pace with `finish-presenter` / `skip-presenter`. No `ClockPort`, no
+  scheduler, no deadline.
+- **All public, room-wide, no client commands.** The defense order and progress
+  hide nothing (the deliberate opposite of the §16.5 QR secrecy), so every event
+  is room-audience with a public payload and 10.1 applies no team-gating. There is
+  no `client:defense:*` surface: the three mutations are REST host actions —
+  `POST rooms/:code/defense/{start,finish-presenter,skip-presenter}` (HostAuthGuard,
+  200) — and `GET rooms/:code/defense/state` is the open read.
+- **Emission order is fixed.** Start: `started` (the order) then `team-started`
+  (the first presenter). Each advance: `team-finished` / `team-skipped` (the
+  presenter leaving) first, then either `team-started` (the next presenter) or —
+  on the last one — `finished` (`nextStage` = EVALUATION). EVALUATION is parked
+  until Stage 10.2; the `EVALUATION → RESULTS → FINISHED` edges arrive with 10.3.
+
 ## Stage 5.2a — what ships now
 
 Sub-stage 5.2a implements the lobby over **REST** and emits the room-wide

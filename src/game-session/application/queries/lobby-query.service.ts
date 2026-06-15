@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Player, Room, Team, Topic } from '../../domain/entities';
 import { RoomNotFoundError, TeamNotFoundError } from '../../domain/errors';
+import { GameStage } from '../../domain/types';
 import {
   PLAYER_REPOSITORY_PORT,
   PlayerRepositoryPort,
@@ -27,6 +28,19 @@ export interface TeamWithMembers {
 export interface RoomTopicAvailability {
   topic: Topic;
   takenByTeamId: string | null;
+}
+
+/**
+ * Derived presentation-defense state (§10.16) for the public `GET defense/state`
+ * read. Nothing here is stored as defense state: `currentPresenterTeamId` is the
+ * room's active-team pointer and `order` the participating teams' `turnOrder`
+ * ascending — the SAME projection StartDefense emits. `stage` mirrors the
+ * use-case `*.stage` convention (the mapper renders it as `currentStage`).
+ */
+export interface DefenseState {
+  stage: GameStage;
+  currentPresenterTeamId: string | null;
+  order: string[];
 }
 
 /**
@@ -120,5 +134,24 @@ export class LobbyQueryService {
       return null;
     }
     return this.teams.findById(room.currentTeamId);
+  }
+
+  /**
+   * Derived presentation-defense state (§10.16) for the public `GET
+   * defense/state` read. The current presenter is the room's active-team
+   * pointer; the order is the participants (non-null `turnOrder`) ascending —
+   * the SAME projection StartDefense/Finish/Skip use. Pure read, no mutation.
+   */
+  async getDefenseState(code: string): Promise<DefenseState> {
+    const room = await this.getRoom(code);
+    const order = (await this.teams.findByRoomId(room.id))
+      .filter((team) => team.turnOrder !== null)
+      .sort((a, b) => (a.turnOrder ?? 0) - (b.turnOrder ?? 0))
+      .map((team) => team.id);
+    return {
+      stage: room.currentStage,
+      currentPresenterTeamId: room.currentTeamId,
+      order,
+    };
   }
 }

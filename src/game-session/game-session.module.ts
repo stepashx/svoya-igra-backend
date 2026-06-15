@@ -27,6 +27,7 @@ import {
   CloseShopUseCase,
   CreateRoomUseCase,
   CreateTeamUseCase,
+  FinishPresentationUseCase,
   JoinRoomUseCase,
   JoinTeamUseCase,
   LeaveTeamUseCase,
@@ -39,6 +40,8 @@ import {
   ReviewAnswerUseCase,
   SelectQuestionUseCase,
   SelectTopicUseCase,
+  SkipPresenterUseCase,
+  StartDefenseUseCase,
   StartGameUseCase,
   StartPresentationPreparationUseCase,
   SubmitAnswerUseCase,
@@ -60,6 +63,7 @@ import {
 } from './infrastructure/persistence';
 import {
   BoardController,
+  DefenseController,
   GameController,
   InventoryController,
   PlayersController,
@@ -142,6 +146,16 @@ import {
  * read model comes from the imported PresentationModule). The room is already in
  * PRESENTATION_PREPARATION (the 8.2 final-shop close parked it there), so the
  * use case changes no room state. Upload/replace/files stay 501 until 9.3.
+ *
+ * Sub-stage 10.1 wires the presentation defenses (the final game backbone): the
+ * {@link DefenseController} and the StartDefense / FinishPresentation /
+ * SkipPresenter use cases, all emitting `server:defense:*` room-wide. StartDefense
+ * MOVES the stage (PRESENTATION_PREPARATION → PRESENTATION_DEFENSE) like
+ * CloseShop — unlike the 9.2 preparation start. The defense state is fully
+ * DERIVED from the existing columns (the active-team pointer + `turnOrder`), so
+ * there is NO new table, NO timer registry and NO new repository — the room/team
+ * ports are already provided. The last presenter's finish/skip moves the room on
+ * to EVALUATION (parked until 10.2).
  */
 @Module({
   imports: [
@@ -173,6 +187,9 @@ import {
     // Presentation: GET requirements (9.1) + preparation deadline/submissions
     // reads and host start-preparation (9.2); upload/files 501 until 9.3.
     PresentationController,
+    // Presentation defense (sub-stage 10.1; Defense tag): host start/finish/skip
+    // + the public derived state read.
+    DefenseController,
   ],
   providers: [
     // Persistence ports → Drizzle adapters.
@@ -221,6 +238,13 @@ import {
     // (FILE_STORAGE_PORT comes transitively from InfrastructureModule, the
     // submission port from the imported PresentationModule).
     UploadPresentationUseCase,
+    // Presentation defense (sub-stage 10.1): host opens the defenses (changes
+    // the stage to PRESENTATION_DEFENSE) and advances/closes the queue. The
+    // state is fully DERIVED (currentTeamId + turnOrder) — no timer registry,
+    // no new repository; the two ports it needs (room/team) are already wired.
+    StartDefenseUseCase,
+    FinishPresentationUseCase,
+    SkipPresenterUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,
