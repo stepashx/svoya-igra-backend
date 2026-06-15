@@ -67,12 +67,17 @@ describe('StorageService', () => {
 
       const expectedKey = 'rooms/room-1/presentations/team-1/sub-1.pdf';
       expect(putObject).toHaveBeenCalledTimes(1);
+      // The canonical Content-Type (from the use case) plus the attachment
+      // disposition are BOTH written — the stored-XSS guards (recon B2).
       expect(putObject).toHaveBeenCalledWith(
         'svoya-igra',
         expectedKey,
         body,
         body.length,
-        { 'Content-Type': 'application/pdf' },
+        {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'attachment',
+        },
       );
       expect(locator).toEqual({
         storageProvider: 'minio',

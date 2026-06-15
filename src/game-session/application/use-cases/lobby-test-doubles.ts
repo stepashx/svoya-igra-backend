@@ -1,4 +1,8 @@
 import { ClockPort } from '../../../core/ports/clock.port';
+import {
+  FileStoragePort,
+  StoredFileLocator,
+} from '../../../core/ports/file-storage.port';
 import { IdGeneratorPort } from '../../../core/ports/id-generator.port';
 import { RandomGeneratorPort } from '../../../core/ports/randomness.port';
 import { RealtimeEventsPort } from '../../../core/ports/realtime-events.port';
@@ -55,6 +59,11 @@ import {
   QrToolRepositoryPort,
   ShopItemRepositoryPort,
 } from '../../../commerce/domain/ports';
+import {
+  PresentationSubmission,
+  PresentationSubmissionReconstituteProps,
+} from '../../../presentation/domain/entities';
+import { PresentationSubmissionRepositoryPort } from '../../../presentation/domain/ports';
 import {
   AnswerTimerRegistry,
   PresentationTimerRegistry,
@@ -173,6 +182,13 @@ export const makeConfig = (
       minTeamsToStart: 2,
       maxPlayersPerTeam: 5,
       ...gameLimits,
+    },
+    // §25 file limits (sub-stage 9.3): the env defaults. `latePenalty` is 1
+    // (the operator kept the env value, not the plan's 2).
+    fileLimits: {
+      maxFileSizeMb: 25,
+      allowedPresentationFormats: ['pdf', 'ppt', 'pptx'],
+      latePenalty: 1,
     },
     reconnect: { roomCodeLength: 6, tokenTtlSeconds: 86_400 },
   }) as unknown as AppConfigService;
@@ -403,5 +419,55 @@ export const makeInventoryItem = (
     shopItemId: 'shop-item-1',
     qrToolId: 'qr-1',
     addedAt: FIXED_NOW,
+    ...overrides,
+  });
+
+/* -------------------------------------------------------------------------- */
+/* Presentation test doubles (sub-stage 9.3 upload).                          */
+/* -------------------------------------------------------------------------- */
+
+/** The durable locator a fake {@link FileStoragePort} returns from an upload. */
+export const STORED_LOCATOR: StoredFileLocator = {
+  storageProvider: 'minio',
+  bucket: 'presentations',
+  storageKey: 'rooms/room-1/presentations/team-1/sub-1.pdf',
+  publicUrl:
+    'https://cdn.example/presentations/rooms/room-1/presentations/team-1/sub-1.pdf',
+};
+
+export const makeFileStorage = (
+  locator: StoredFileLocator = STORED_LOCATOR,
+): jest.Mocked<FileStoragePort> => ({
+  putPresentation: jest.fn().mockResolvedValue(locator),
+});
+
+export const makePresentationSubmissionRepo =
+  (): jest.Mocked<PresentationSubmissionRepositoryPort> => ({
+    create: jest.fn().mockResolvedValue(undefined),
+    replace: jest.fn().mockResolvedValue(undefined),
+    findByRoomAndTeam: jest.fn().mockResolvedValue(null),
+    findByRoomId: jest.fn().mockResolvedValue([]),
+  });
+
+export const makePresentationSubmission = (
+  overrides: Partial<PresentationSubmissionReconstituteProps> = {},
+): PresentationSubmission =>
+  PresentationSubmission.reconstitute({
+    id: 'sub-1',
+    roomId: 'room-1',
+    teamId: 'team-1',
+    uploadedByPlayerId: 'captain-1',
+    originalFileName: 'deck.pdf',
+    mimeType: 'application/pdf',
+    fileSize: 2048,
+    storageProvider: 'minio',
+    bucket: 'presentations',
+    storageKey: 'rooms/room-1/presentations/team-1/sub-1.pdf',
+    publicUrl: 'https://cdn.example/presentations/team-1/sub-1.pdf',
+    uploadedAt: FIXED_NOW,
+    deadlineAt: new Date(FIXED_NOW.getTime() + 600_000),
+    isLate: false,
+    latePenalty: 0,
+    status: 'UPLOADED',
     ...overrides,
   });

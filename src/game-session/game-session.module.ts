@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { MulterModule } from '@nestjs/platform-express';
+import { AppConfigService } from '../config/app-config.service';
 import { CommerceModule } from '../commerce/commerce.module';
 import { GameplayModule } from '../gameplay/gameplay.module';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
@@ -41,6 +43,7 @@ import {
   StartPresentationPreparationUseCase,
   SubmitAnswerUseCase,
   UpdateProfileUseCase,
+  UploadPresentationUseCase,
 } from './application/use-cases';
 import {
   PLAYER_REPOSITORY_PORT,
@@ -70,6 +73,7 @@ import {
 import {
   HostAuthGuard,
   PlayerIdentityGuard,
+  presentationMulterOptions,
   TeamMemberOrHostGuard,
 } from './presentation/http';
 import {
@@ -146,6 +150,13 @@ import {
     GameplayModule,
     CommerceModule,
     PresentationModule,
+    // Presentation upload (9.3): in-memory multipart with a size limit and an
+    // extension-only fileFilter (BadRequestException → 400). AppConfigService is
+    // globally available, so the async factory injects it directly.
+    MulterModule.registerAsync({
+      inject: [AppConfigService],
+      useFactory: presentationMulterOptions,
+    }),
   ],
   controllers: [
     RoomsController,
@@ -206,6 +217,10 @@ import {
     // imported PresentationModule (PresentationQueryService).
     PresentationTimerRegistry,
     StartPresentationPreparationUseCase,
+    // Presentation upload (sub-stage 9.3): the captain's two-phase upload/replace
+    // (FILE_STORAGE_PORT comes transitively from InfrastructureModule, the
+    // submission port from the imported PresentationModule).
+    UploadPresentationUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,

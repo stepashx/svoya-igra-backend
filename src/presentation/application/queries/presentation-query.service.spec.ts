@@ -51,6 +51,7 @@ describe('PresentationQueryService', () => {
     submissions: PresentationSubmission[] = [],
   ): jest.Mocked<PresentationSubmissionRepositoryPort> => ({
     create: jest.fn().mockResolvedValue(undefined),
+    replace: jest.fn().mockResolvedValue(undefined),
     findByRoomAndTeam: jest.fn().mockResolvedValue(null),
     findByRoomId: jest.fn().mockResolvedValue(submissions),
   });

@@ -23,3 +23,5 @@ export * from './close-shop.use-case';
 export * from './purchase-item.use-case';
 // Presentation preparation (sub-stage 9.2).
 export * from './start-presentation-preparation.use-case';
+// Presentation upload (sub-stage 9.3).
+export * from './upload-presentation.use-case';

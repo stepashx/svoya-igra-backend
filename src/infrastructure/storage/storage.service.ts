@@ -27,6 +27,12 @@ export class StorageService implements FileStoragePort {
    * Persist one uploaded presentation file under its room/team-scoped key and
    * return the durable locator the upload use case stores on the submission
    * row. Public bucket (MVP), so the returned `publicUrl` is room-readable.
+   *
+   * The object is written with two stored-XSS guards (recon B2): the
+   * `Content-Type` is the SERVER-canonical MIME the use case derived from the
+   * extension (never the client `mimetype`), and `Content-Disposition:
+   * attachment` forces the browser to download rather than render — so even a
+   * mislabelled HTML payload cannot execute when the public URL is opened.
    */
   async putPresentation(
     params: PutPresentationParams,
@@ -40,6 +46,7 @@ export class StorageService implements FileStoragePort {
     });
     await this.client.putObject(bucket, storageKey, params.body, params.size, {
       'Content-Type': params.contentType,
+      'Content-Disposition': 'attachment',
     });
     return {
       storageProvider: 'minio',

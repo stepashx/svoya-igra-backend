@@ -6,3 +6,4 @@ export * from './gameplay-payloads';
 export * from './commerce-events';
 export * from './commerce-payloads';
 export * from './presentation-events';
+export * from './presentation-payloads';

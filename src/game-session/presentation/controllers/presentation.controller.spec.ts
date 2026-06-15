@@ -1,4 +1,3 @@
-import { NotImplementedException } from '@nestjs/common';
 import { PresentationQueryService } from '../../../presentation/application/queries';
 import {
   PresentationRequirement,
@@ -8,13 +7,43 @@ import {
   LobbyQueryService,
   TimerQueryService,
 } from '../../application/queries';
-import { StartPresentationPreparationUseCase } from '../../application/use-cases';
+import {
+  StartPresentationPreparationUseCase,
+  UploadPresentationUseCase,
+} from '../../application/use-cases';
 import { makeRoom } from '../../application/use-cases/lobby-test-doubles';
+import { Player } from '../../domain/entities';
 import { PresentationController } from './presentation.controller';
 
 describe('PresentationController', () => {
   const startedAt = new Date('2026-06-14T12:00:00.000Z');
   const endsAt = new Date('2026-06-14T12:10:00.000Z');
+
+  const makeSubmission = (
+    overrides: Partial<{
+      isLate: boolean;
+      latePenalty: number;
+      status: 'UPLOADED' | 'LATE';
+    }> = {},
+  ) =>
+    PresentationSubmission.reconstitute({
+      id: 'sub-1',
+      roomId: 'room-1',
+      teamId: 'team-1',
+      uploadedByPlayerId: 'player-1',
+      originalFileName: 'deck.pdf',
+      mimeType: 'application/pdf',
+      fileSize: 2048,
+      storageProvider: 'minio',
+      bucket: 'presentations',
+      storageKey: 'rooms/room-1/presentations/team-1/sub-1.pdf',
+      publicUrl: 'https://cdn.example/room-1/team-1.pdf',
+      uploadedAt: new Date('2026-06-14T12:05:00.000Z'),
+      deadlineAt: new Date('2026-06-14T12:10:00.000Z'),
+      isLate: overrides.isLate ?? false,
+      latePenalty: overrides.latePenalty ?? 0,
+      status: overrides.status ?? 'UPLOADED',
+    });
 
   const build = () => {
     const presentationQuery = {
@@ -30,11 +59,15 @@ describe('PresentationController', () => {
     const startPresentationPreparation = {
       execute: jest.fn(),
     } as unknown as jest.Mocked<StartPresentationPreparationUseCase>;
+    const uploadPresentation = {
+      execute: jest.fn(),
+    } as unknown as jest.Mocked<UploadPresentationUseCase>;
     const controller = new PresentationController(
       presentationQuery,
       lobby,
       timers,
       startPresentationPreparation,
+      uploadPresentation,
     );
     return {
       controller,
@@ -42,6 +75,7 @@ describe('PresentationController', () => {
       lobby,
       timers,
       startPresentationPreparation,
+      uploadPresentation,
     };
   };
 
@@ -141,30 +175,10 @@ describe('PresentationController', () => {
     expect(res).toEqual([]);
   });
 
-  it('maps each submission to a public status DTO (publicUrl included, 9.2)', async () => {
+  it('maps each submission to a public status DTO with the 9.3 metadata', async () => {
     const { controller, presentationQuery, lobby } = build();
     lobby.getRoom.mockResolvedValue(makeRoom({ id: 'room-1' }));
-    const uploadedAt = new Date('2026-06-14T12:05:00.000Z');
-    presentationQuery.listSubmissions.mockResolvedValue([
-      PresentationSubmission.reconstitute({
-        id: 'sub-1',
-        roomId: 'room-1',
-        teamId: 'team-1',
-        uploadedByPlayerId: 'player-1',
-        originalFileName: 'deck.pdf',
-        mimeType: 'application/pdf',
-        fileSize: 2048,
-        storageProvider: 'minio',
-        bucket: 'presentations',
-        storageKey: 'room-1/team-1.pdf',
-        publicUrl: 'https://cdn.example/room-1/team-1.pdf',
-        uploadedAt,
-        deadlineAt: new Date('2026-06-14T12:10:00.000Z'),
-        isLate: false,
-        latePenalty: 0,
-        status: 'UPLOADED',
-      }),
-    ]);
+    presentationQuery.listSubmissions.mockResolvedValue([makeSubmission()]);
 
     const res = await controller.getSubmissions('ABCDEF');
 
@@ -173,16 +187,116 @@ describe('PresentationController', () => {
         teamId: 'team-1',
         status: 'UPLOADED',
         isLate: false,
-        uploadedAt: uploadedAt.toISOString(),
+        uploadedAt: '2026-06-14T12:05:00.000Z',
         publicUrl: 'https://cdn.example/room-1/team-1.pdf',
+        originalFileName: 'deck.pdf',
+        fileSize: 2048,
+        latePenalty: 0,
       },
     ]);
   });
 
-  it('returns 501 for the deferred upload + files surface (9.3)', () => {
-    const { controller } = build();
-    expect(() => controller.upload()).toThrow(NotImplementedException);
-    expect(() => controller.replace()).toThrow(NotImplementedException);
-    expect(() => controller.getFiles()).toThrow(NotImplementedException);
+  it('lists files as public file DTOs (9.3)', async () => {
+    const { controller, presentationQuery, lobby } = build();
+    lobby.getRoom.mockResolvedValue(makeRoom({ id: 'room-1' }));
+    presentationQuery.listSubmissions.mockResolvedValue([makeSubmission()]);
+
+    const res = await controller.getFiles('ABCDEF');
+
+    expect(presentationQuery.listSubmissions).toHaveBeenCalledWith('room-1');
+    expect(res).toEqual([
+      {
+        teamId: 'team-1',
+        originalFileName: 'deck.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 2048,
+        publicUrl: 'https://cdn.example/room-1/team-1.pdf',
+        status: 'UPLOADED',
+        isLate: false,
+        uploadedAt: '2026-06-14T12:05:00.000Z',
+      },
+    ]);
+  });
+
+  it('uploads via the use case and maps the result to the captain reply (9.3)', async () => {
+    const { controller, uploadPresentation } = build();
+    const submission = makeSubmission();
+    uploadPresentation.execute.mockResolvedValue({
+      submission,
+      publicUrl: submission.publicUrl,
+      isCreate: true,
+    });
+    const player = { id: 'player-1', roomId: 'room-1' } as Player;
+    const file = {
+      originalname: 'deck.pdf',
+      mimetype: 'application/pdf',
+      size: 2048,
+      buffer: Buffer.from('%PDF-1.4'),
+    } as Express.Multer.File;
+
+    const res = await controller.upload(player, file);
+
+    expect(uploadPresentation.execute).toHaveBeenCalledWith({
+      roomId: 'room-1',
+      actingPlayerId: 'player-1',
+      file: {
+        originalFileName: 'deck.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 2048,
+        buffer: file.buffer,
+      },
+    });
+    expect(res).toEqual({
+      isCreate: true,
+      teamId: 'team-1',
+      originalFileName: 'deck.pdf',
+      mimeType: 'application/pdf',
+      fileSize: 2048,
+      status: 'UPLOADED',
+      isLate: false,
+      latePenalty: 0,
+      uploadedAt: '2026-06-14T12:05:00.000Z',
+      publicUrl: submission.publicUrl,
+    });
+  });
+
+  it('replace delegates to the same upload use case and reports isCreate=false (9.3)', async () => {
+    const { controller, uploadPresentation } = build();
+    const submission = makeSubmission({
+      isLate: true,
+      latePenalty: 1,
+      status: 'LATE',
+    });
+    uploadPresentation.execute.mockResolvedValue({
+      submission,
+      publicUrl: submission.publicUrl,
+      isCreate: false,
+    });
+    const player = { id: 'player-1', roomId: 'room-1' } as Player;
+    const file = {
+      originalname: 'deck.pdf',
+      mimetype: 'application/pdf',
+      size: 4096,
+      buffer: Buffer.from('%PDF-1.7'),
+    } as Express.Multer.File;
+
+    const res = await controller.replace(player, file);
+
+    expect(uploadPresentation.execute).toHaveBeenCalledWith({
+      roomId: 'room-1',
+      actingPlayerId: 'player-1',
+      file: {
+        originalFileName: 'deck.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 4096,
+        buffer: file.buffer,
+      },
+    });
+    expect(res).toMatchObject({
+      isCreate: false,
+      status: 'LATE',
+      isLate: true,
+      latePenalty: 1,
+    });
   });
 });

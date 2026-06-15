@@ -3,17 +3,20 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   Param,
+  ParseFilePipe,
   Post,
   Put,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  ApiConsumes,
   ApiHeader,
   ApiOkResponse,
   ApiOperation,
-  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
@@ -22,26 +25,34 @@ import {
   LobbyQueryService,
   TimerQueryService,
 } from '../../application/queries';
-import { StartPresentationPreparationUseCase } from '../../application/use-cases';
+import {
+  StartPresentationPreparationUseCase,
+  UploadPresentationUseCase,
+} from '../../application/use-cases';
+import { Player } from '../../domain/entities';
 import {
   PresentationDeadlineResponseDto,
+  PresentationFileResponseDto,
   PresentationRequirementResponseDto,
   PresentationSubmissionStatusResponseDto,
+  PresentationUploadResultResponseDto,
 } from '../dto/response';
 import {
   CurrentHost,
+  CurrentPlayer,
   HOST_TOKEN_HEADER,
   HostAuthGuard,
   HostContext,
+  PLAYER_TOKEN_HEADER,
+  PlayerIdentityGuard,
 } from '../http';
 import {
   toPresentationDeadlineResponse,
+  toPresentationFileResponse,
   toPresentationRequirementResponse,
   toPresentationSubmissionStatusResponse,
+  toPresentationUploadResultResponse,
 } from '../mappers';
-
-const NOT_IMPLEMENTED_93 =
-  'Presentation upload / replace / files arrive in sub-stage 9.3.';
 
 /**
  * Presentation REST surface (plan §15.10), nested under a room. Design A: the
@@ -49,16 +60,20 @@ const NOT_IMPLEMENTED_93 =
  * while the requirement/submission reads come from the presentation-exported
  * {@link PresentationQueryService}.
  *
- * Sub-stage 9.2 wires the preparation surface on top of the 9.1 `GET
- * requirements`: the host opens preparation (`POST start-preparation`, the first
- * §16.6 emitter — `preparation-started` + `timer-started`), and the public reads
- * `GET deadline` (the {@link PresentationTimerRegistry} state) and `GET
- * submissions` (per-team upload status, empty until 9.3). `POST upload` / `PUT
- * upload` (replace) / `GET files` stay 501 (9.3).
+ * Sub-stage 9.3 completes the surface on top of the 9.2 preparation reads:
+ *
+ * - `POST upload` / `PUT upload` — a team captain uploads (first) or replaces
+ *   their team's file. ONE {@link UploadPresentationUseCase} (upsert) backs
+ *   both verbs; the verb is cosmetic. PlayerIdentityGuard for coarse authn
+ *   (the use case enforces captaincy); 200 (the POST-mutation precedent); the
+ *   multipart `file` part is parsed in-memory by the module Multer config.
+ * - `GET files` — the public room file catalog (the SAME projection as the
+ *   `files-updated` broadcast).
+ * - `GET submissions` — now carries the richer file metadata (9.3, additive).
  *
  * Presentation files are PUBLIC (Этап2 §10.15): a team's file is seen by the
- * host and the other teams, so these reads carry no secrecy — the opposite of
- * the §16.5 QR contract. No R3-style gating is applied here.
+ * host and the other teams, so these reads/replies carry no secrecy — the
+ * opposite of the §16.5 QR contract. No R3-style gating is applied here.
  */
 @ApiTags(SwaggerTag.Presentation)
 @Controller('rooms/:code/presentation')
@@ -68,6 +83,7 @@ export class PresentationController {
     private readonly lobby: LobbyQueryService,
     private readonly timers: TimerQueryService,
     private readonly startPresentationPreparation: StartPresentationPreparationUseCase,
+    private readonly uploadPresentation: UploadPresentationUseCase,
   ) {}
 
   @Get('requirements')
@@ -126,23 +142,75 @@ export class PresentationController {
   }
 
   @Post('upload')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PlayerIdentityGuard)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Upload a presentation file (team captain only)' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED_93 })
-  upload(): never {
-    throw new NotImplementedException();
+  @ApiOkResponse({ type: PresentationUploadResultResponseDto })
+  async upload(
+    @CurrentPlayer() player: Player,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [],
+        fileIsRequired: true,
+        errorHttpStatusCode: HttpStatus.BAD_REQUEST,
+      }),
+    )
+    file: Express.Multer.File,
+  ): Promise<PresentationUploadResultResponseDto> {
+    return this.runUpload(player, file);
   }
 
   @Put('upload')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PlayerIdentityGuard)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Replace a presentation file (team captain only)' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED_93 })
-  replace(): never {
-    throw new NotImplementedException();
+  @ApiOkResponse({ type: PresentationUploadResultResponseDto })
+  async replace(
+    @CurrentPlayer() player: Player,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [],
+        fileIsRequired: true,
+        errorHttpStatusCode: HttpStatus.BAD_REQUEST,
+      }),
+    )
+    file: Express.Multer.File,
+  ): Promise<PresentationUploadResultResponseDto> {
+    return this.runUpload(player, file);
   }
 
   @Get('files')
   @ApiOperation({ summary: 'List the presentation files (public links)' })
-  @ApiResponse({ status: 501, description: NOT_IMPLEMENTED_93 })
-  getFiles(): never {
-    throw new NotImplementedException();
+  @ApiOkResponse({ type: [PresentationFileResponseDto] })
+  async getFiles(
+    @Param('code') code: string,
+  ): Promise<PresentationFileResponseDto[]> {
+    const room = await this.lobby.getRoom(code);
+    const submissions = await this.presentationQuery.listSubmissions(room.id);
+    return submissions.map(toPresentationFileResponse);
+  }
+
+  /** Shared upsert path for the POST (first) and PUT (replace) upload routes. */
+  private async runUpload(
+    player: Player,
+    file: Express.Multer.File,
+  ): Promise<PresentationUploadResultResponseDto> {
+    const result = await this.uploadPresentation.execute({
+      roomId: player.roomId,
+      actingPlayerId: player.id,
+      file: {
+        originalFileName: file.originalname,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        buffer: file.buffer,
+      },
+    });
+    return toPresentationUploadResultResponse(result);
   }
 }

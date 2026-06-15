@@ -65,4 +65,93 @@ export class PresentationSubmissionStatusResponseDto {
 
   @ApiProperty({ description: 'Public link to the file (no secrecy, §10.15).' })
   publicUrl!: string;
+
+  @ApiProperty({ description: 'The original client file name.' })
+  originalFileName!: string;
+
+  @ApiProperty({ description: 'File size in bytes.' })
+  fileSize!: number;
+
+  @ApiProperty({
+    description:
+      'EFFECTIVE late penalty: the configured value if late, else 0.',
+  })
+  latePenalty!: number;
+}
+
+/**
+ * One team's presentation file (plan §15.10) for the public `GET files` list and
+ * the room-wide `files-updated` broadcast — the SAME shape on both surfaces, so
+ * the frontend renders a WS push and a REST read identically (the DRY file
+ * projection). PUBLIC: `publicUrl` is room-readable (§10.15).
+ */
+export class PresentationFileResponseDto {
+  @ApiProperty()
+  teamId!: string;
+
+  @ApiProperty()
+  originalFileName!: string;
+
+  @ApiProperty({
+    description: 'SERVER-canonical MIME (derived from extension).',
+  })
+  mimeType!: string;
+
+  @ApiProperty({ description: 'File size in bytes.' })
+  fileSize!: number;
+
+  @ApiProperty({ description: 'Public link to the file (no secrecy, §10.15).' })
+  publicUrl!: string;
+
+  @ApiProperty({ enum: ['UPLOADED', 'LATE'] })
+  status!: string;
+
+  @ApiProperty()
+  isLate!: boolean;
+
+  @ApiProperty({ format: 'date-time' })
+  uploadedAt!: string;
+}
+
+/**
+ * The reply to a successful `POST`/`PUT upload`, sent to the uploading captain
+ * (plan §15.10). Behind the player guard, but PUBLIC anyway (presentation files
+ * carry no secret, §10.15). Flat on purpose: the file's stored metadata plus
+ * `isCreate` (whether this was a first upload or a replace).
+ */
+export class PresentationUploadResultResponseDto {
+  @ApiProperty({ description: 'true on first upload, false on a replace.' })
+  isCreate!: boolean;
+
+  @ApiProperty()
+  teamId!: string;
+
+  @ApiProperty()
+  originalFileName!: string;
+
+  @ApiProperty({
+    description: 'SERVER-canonical MIME (derived from extension).',
+  })
+  mimeType!: string;
+
+  @ApiProperty({ description: 'File size in bytes.' })
+  fileSize!: number;
+
+  @ApiProperty({ enum: ['UPLOADED', 'LATE'] })
+  status!: string;
+
+  @ApiProperty()
+  isLate!: boolean;
+
+  @ApiProperty({
+    description:
+      'EFFECTIVE late penalty: the configured value if late, else 0.',
+  })
+  latePenalty!: number;
+
+  @ApiProperty({ format: 'date-time' })
+  uploadedAt!: string;
+
+  @ApiProperty({ description: 'Public link to the stored file (§10.15).' })
+  publicUrl!: string;
 }

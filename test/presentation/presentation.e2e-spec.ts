@@ -68,12 +68,19 @@ describe('Presentation skeleton (e2e)', () => {
     await http().get('/api/rooms/ZZZZZZ/presentation/requirements').expect(404);
   });
 
-  it('returns 501 for the deferred upload + files surface (9.3)', async () => {
+  it('exposes the 9.3 upload + files surface (no longer 501)', async () => {
     const room = await createRoom(app);
 
+    // GET files is a public read — empty until a team uploads (covered fully by
+    // presentation-upload.e2e-spec). It must NOT be the old 501 stub.
+    const files = await http()
+      .get(`/api/rooms/${room.code}/presentation/files`)
+      .expect(200);
+    expect(files.body).toEqual([]);
+
+    // POST upload is live and guarded — a missing player token is 401, not 501.
     await http()
       .post(`/api/rooms/${room.code}/presentation/upload`)
-      .expect(501);
-    await http().get(`/api/rooms/${room.code}/presentation/files`).expect(501);
+      .expect(401);
   });
 });

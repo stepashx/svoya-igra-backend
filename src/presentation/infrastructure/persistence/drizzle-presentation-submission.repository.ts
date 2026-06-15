@@ -8,15 +8,19 @@ import { PresentationSubmission } from '../../domain/entities';
 import { PresentationSubmissionRepositoryPort } from '../../domain/ports';
 import {
   mapPresentationSubmissionToInsert,
+  mapPresentationSubmissionToUpdate,
   mapRowToPresentationSubmission,
 } from './mappers';
+import { translatePresentationUniqueViolation } from './pg-error.util';
 
 /**
  * Drizzle/PostgreSQL adapter for {@link PresentationSubmissionRepositoryPort}.
- * Transaction-aware via the shared {@link TransactionContext}. `create` is a
- * plain insert — the `presentation_submissions_room_id_team_id_uq` 23505 is
- * unreachable in 9.1 (no upload use case calls it yet); the replace/upsert path
- * and its constraint translation land with the upload use case (9.3).
+ * Transaction-aware via the shared {@link TransactionContext}. `create`
+ * translates the `presentation_submissions_room_id_team_id_uq` 23505 into
+ * {@link PresentationSubmissionConflictError} — defensive, since the upload use
+ * case resolves create-vs-replace under the per-room advisory lock, so a
+ * concurrent insert is unreachable in practice. `replace` is the re-upload
+ * UPDATE keyed on that same (room, team) unique index.
  */
 @Injectable()
 export class DrizzlePresentationSubmissionRepository implements PresentationSubmissionRepositoryPort {
@@ -30,9 +34,25 @@ export class DrizzlePresentationSubmissionRepository implements PresentationSubm
   }
 
   async create(submission: PresentationSubmission): Promise<void> {
+    try {
+      await this.executor()
+        .insert(presentationSubmissions)
+        .values(mapPresentationSubmissionToInsert(submission));
+    } catch (error) {
+      translatePresentationUniqueViolation(error);
+    }
+  }
+
+  async replace(submission: PresentationSubmission): Promise<void> {
     await this.executor()
-      .insert(presentationSubmissions)
-      .values(mapPresentationSubmissionToInsert(submission));
+      .update(presentationSubmissions)
+      .set(mapPresentationSubmissionToUpdate(submission))
+      .where(
+        and(
+          eq(presentationSubmissions.roomId, submission.roomId),
+          eq(presentationSubmissions.teamId, submission.teamId),
+        ),
+      );
   }
 
   async findByRoomAndTeam(

@@ -2,6 +2,7 @@ import { presentationSubmissions } from '../../../../infrastructure/database/sch
 import { PresentationSubmission } from '../../../domain/entities';
 import {
   mapPresentationSubmissionToInsert,
+  mapPresentationSubmissionToUpdate,
   mapRowToPresentationSubmission,
 } from './presentation-submission.mapper';
 
@@ -104,5 +105,31 @@ describe('presentation-submission.mapper', () => {
         insert as typeof presentationSubmissions.$inferSelect,
       ),
     ).toEqual(submission);
+  });
+
+  it('maps an entity to a partial UPDATE payload (no identity columns)', () => {
+    const submission = mapRowToPresentationSubmission(row);
+    const update = mapPresentationSubmissionToUpdate(submission);
+
+    // The (id, roomId, teamId) identity triple is the WHERE key — never updated.
+    expect(update).not.toHaveProperty('id');
+    expect(update).not.toHaveProperty('roomId');
+    expect(update).not.toHaveProperty('teamId');
+    // Every other (mutable) column is present, carrying the fresh file state.
+    expect(update).toEqual({
+      uploadedByPlayerId: 'player-1',
+      originalFileName: 'deck.pdf',
+      mimeType: 'application/pdf',
+      fileSize: 2048,
+      storageProvider: 'minio',
+      bucket: 'svoya-igra',
+      storageKey: row.storageKey,
+      publicUrl: row.publicUrl,
+      uploadedAt,
+      deadlineAt,
+      isLate: false,
+      latePenalty: 0,
+      status: 'UPLOADED',
+    });
   });
 });
