@@ -1,5 +1,6 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Param } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiErrorResponses } from '../../../common/http/api-error-responses.decorator';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import { LobbyQueryService } from '../../application/queries';
 import { RoomTopicResponseDto, TopicResponseDto } from '../dto/response';
@@ -25,6 +26,7 @@ export class TopicsController {
   @Get('rooms/:code/topics')
   @ApiOperation({ summary: 'List topics with room availability' })
   @ApiOkResponse({ type: [RoomTopicResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getRoomTopics(
     @Param('code') code: string,
   ): Promise<RoomTopicResponseDto[]> {

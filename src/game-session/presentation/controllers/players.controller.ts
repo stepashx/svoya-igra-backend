@@ -16,6 +16,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { ApiErrorResponses } from '../../../common/http/api-error-responses.decorator';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import { LobbyQueryService } from '../../application/queries';
 import {
@@ -55,6 +56,11 @@ export class PlayersController {
   @Post()
   @ApiOperation({ summary: 'Join the room as a player' })
   @ApiCreatedResponse({ type: PlayerIdentityResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async create(
     @Param('code') code: string,
     @Body() dto: JoinRoomRequestDto,
@@ -66,6 +72,7 @@ export class PlayersController {
   @Get()
   @ApiOperation({ summary: 'List players in the room' })
   @ApiOkResponse({ type: [PlayerResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async list(@Param('code') code: string): Promise<PlayerResponseDto[]> {
     const players = await this.lobby.listPlayers(code);
     return players.map(toPlayerResponse);
@@ -76,6 +83,12 @@ export class PlayersController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Get the current player' })
   @ApiOkResponse({ type: PlayerResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+  )
   getMe(@CurrentPlayer() player: Player): PlayerResponseDto {
     return toPlayerResponse(player);
   }
@@ -85,6 +98,13 @@ export class PlayersController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Update the current player profile' })
   @ApiOkResponse({ type: PlayerResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async updateMe(
     @CurrentPlayer() player: Player,
     @Body() dto: UpdateProfileRequestDto,
@@ -104,6 +124,13 @@ export class PlayersController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Reconnect a player by reconnect token' })
   @ApiOkResponse({ type: RoomStateResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async reconnect(
     @CurrentPlayer() player: Player,
   ): Promise<RoomStateResponseDto> {
