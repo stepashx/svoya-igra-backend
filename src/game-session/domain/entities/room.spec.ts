@@ -85,6 +85,32 @@ describe('Room', () => {
     }
   });
 
+  it('walks the legal presentation-phase transitions through to RESULTS', () => {
+    const legal: ReadonlyArray<[GameStage, GameStage]> = [
+      ['PRESENTATION_PREPARATION', 'PRESENTATION_DEFENSE'],
+      ['PRESENTATION_DEFENSE', 'EVALUATION'],
+      ['EVALUATION', 'RESULTS'],
+    ];
+    for (const [from, to] of legal) {
+      const room = makeRoomAt(from);
+      room.transitionTo(to);
+      expect(room.currentStage).toBe(to);
+    }
+  });
+
+  it('RESULTS is terminal: no outgoing stage transition (the game finishes via status)', () => {
+    const room = makeRoomAt('RESULTS');
+    expect(() => room.transitionTo('FINISHED')).toThrow(
+      InvalidStageTransitionError,
+    );
+    expect(room.currentStage).toBe('RESULTS');
+    // The game leaves ACTIVE for the FINISHED *status*, not a stage.
+    const finishedAt = new Date('2026-01-01T03:00:00.000Z');
+    room.markFinished(finishedAt);
+    expect(room.status).toBe('FINISHED');
+    expect(room.finishedAt).toBe(finishedAt);
+  });
+
   it('rejects illegal board-loop transitions and keeps the stage', () => {
     const illegal: ReadonlyArray<[GameStage, GameStage]> = [
       ['GAME_BOARD', 'SHOP'],

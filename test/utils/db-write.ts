@@ -63,6 +63,50 @@ export async function setRoomStage(
   ]);
 }
 
+/**
+ * Insert a minimal LATE presentation submission for a team (§9). Used by the
+ * 10.3 results suite to give a team a known `late_penalty` snapshot without
+ * driving the multipart upload path (covered by the 9.3 suite); the required
+ * file-location columns get throwaway values. `late_penalty` carries no DB
+ * default, so it is always supplied.
+ */
+export async function presetLateSubmission(
+  roomId: string,
+  teamId: string,
+  latePenalty: number,
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO presentation_submissions
+       (room_id, team_id, original_file_name, mime_type, file_size, bucket,
+        storage_key, public_url, deadline_at, is_late, late_penalty, status)
+     VALUES ($1, $2, 'late.pdf', 'application/pdf', 1024, 'presentations',
+        $3, $4, now(), true, $5, 'LATE')`,
+    [
+      roomId,
+      teamId,
+      `rooms/${roomId}/presentations/${teamId}/late.pdf`,
+      `https://cdn.example/${teamId}/late.pdf`,
+      latePenalty,
+    ],
+  );
+}
+
+/**
+ * Insert a "phantom" team that NEVER presented (turn_order null, no captain) —
+ * the §10.3 ⚠️A B1 case. CalculateResults must skip it (no final_results row).
+ * Returns the new team id. Only the NOT-NULL columns without a default are set.
+ */
+export async function insertPhantomTeam(
+  roomId: string,
+  name: string,
+): Promise<string> {
+  const result = await getPool().query<{ id: string }>(
+    'INSERT INTO teams (room_id, name) VALUES ($1, $2) RETURNING id',
+    [roomId, name],
+  );
+  return result.rows[0].id;
+}
+
 export async function closeDbWritePool(): Promise<void> {
   if (pool) {
     await pool.end();

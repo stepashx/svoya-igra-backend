@@ -460,6 +460,153 @@ Same derivation as §16.1–16.5: a plan token `x:y` becomes
   signal). No DB column; state does not survive a process restart (single-node
   MVP). `requirements-updated` is likewise never pushed — the catalog is static.
 
+### Defense — server broadcasts (§16.7)
+
+Catalog of the §16.7 "presentation defense" broadcasts. The constants live in
+`src/game-session/application/events/defense-events.ts` (next to the game-session
+use cases that emit them, Design A — exactly as commerce/presentation); there is
+no separate defense module. **Sub-stage 10.1 emits all five** — StartDefense
+opens the defenses, FinishPresentation / SkipPresenter advance the queue. The
+**Status** column records each name's disposition. Every row is **room-wide and
+PUBLIC** (see _Defense contract notes_ for why there is no secrecy here).
+
+| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+|---|---|---|---|---|---|---|
+| `server:defense:started` | server | defense | room | Defenses opened (PRESENTATION_PREPARATION → PRESENTATION_DEFENSE) — carries the whole presentation order | §16.7 | Emitted since 10.1 by StartDefenseUseCase (host `POST start`), FIRST of the start pair; payload `{ roomId, order }` (`order` = team ids, `turnOrder` ascending) |
+| `server:defense:team-started` | server | defense | room | The next presenter is on | §16.7 | Emitted since 10.1 by StartDefenseUseCase (the first presenter, right AFTER `started`) and by Finish/Skip (each subsequent presenter); payload `{ roomId, teamId }` |
+| `server:defense:team-finished` | server | defense | room | The current presenter's defense finished | §16.7 | Emitted since 10.1 by FinishPresentationUseCase (host `POST finish-presenter`), FIRST of the advance; payload `{ roomId, teamId }` (the presenter that just left) |
+| `server:defense:team-skipped` | server | defense | room | The host skipped the current presenter | §16.7 | Emitted since 10.1 by SkipPresenterUseCase (host `POST skip-presenter`), FIRST of the advance; payload `{ roomId, teamId }`. The ONLY difference from `team-finished` — same advance otherwise |
+| `server:defense:finished` | server | defense | room | The LAST presenter finished/skipped (PRESENTATION_DEFENSE → EVALUATION) | §16.7 | Emitted since 10.1 by Finish/Skip when there is no next presenter (end of the finite queue), in place of `team-started`; payload `{ roomId, nextStage }` (`nextStage` = EVALUATION) |
+
+### Plan name → canonical name (§16.7)
+
+Same derivation as §16.1–16.6: a plan token `x:y` becomes `server:defense:x-y`
+in kebab-case (camelCase split on case, e.g. `teamStarted` → `team-started`).
+
+| Plan name (§16.7) | Canonical name |
+|---|---|
+| `defense:started` | `server:defense:started` |
+| `defense:teamStarted` | `server:defense:team-started` |
+| `defense:teamFinished` | `server:defense:team-finished` |
+| `defense:teamSkipped` | `server:defense:team-skipped` |
+| `defense:finished` | `server:defense:finished` |
+
+### Defense contract notes (§16.7)
+
+- **The defense state is fully DERIVED — there is no defense table.** The current
+  presenter is `Room.currentTeamId` (the same pointer the battle turn uses) and
+  the order is the participating teams' `turnOrder` ascending (assigned at game
+  start, §14.5). 10.1 adds **no** schema, **no** in-memory registry — the state
+  lives in the existing columns and therefore survives a process restart
+  (`db:generate` stays "No schema changes"). The public `GET defense/state`
+  recomputes it on demand for reconnect/refresh.
+- **The queue is FINITE — no wrap (the key contrast with the battle turn).** The
+  battle turn is a round-robin that wraps with `% length` (review-answer
+  `moveToNextTurn`); the defense queue does NOT. `nextDefensePresenter` returns
+  `order[idx + 1] ?? null`, so past the last presenter there is no next team —
+  and that `null` is exactly what drives the `finished` broadcast and the
+  PRESENTATION_DEFENSE → EVALUATION exit.
+- **StartDefense MOVES the stage (like CloseShop, unlike the 9.2 prep start).**
+  The room is parked in PRESENTATION_PREPARATION after preparation/upload;
+  StartDefense validates that stage, `transitionTo('PRESENTATION_DEFENSE')`,
+  points the room at the first presenter and persists with `rooms.update` — two
+  new STAGE_FLOW edges (PRESENTATION_PREPARATION → PRESENTATION_DEFENSE →
+  EVALUATION). The 9.2 `start-preparation` changed no room state; this one does.
+- **Host-paced, no timer.** Unlike the answer (§16.4), shop (§16.5) and
+  preparation (§16.6) timers, there is NO defense timer/registry — the host drives
+  the pace with `finish-presenter` / `skip-presenter`. No `ClockPort`, no
+  scheduler, no deadline.
+- **All public, room-wide, no client commands.** The defense order and progress
+  hide nothing (the deliberate opposite of the §16.5 QR secrecy), so every event
+  is room-audience with a public payload and 10.1 applies no team-gating. There is
+  no `client:defense:*` surface: the three mutations are REST host actions —
+  `POST rooms/:code/defense/{start,finish-presenter,skip-presenter}` (HostAuthGuard,
+  200) — and `GET rooms/:code/defense/state` is the open read.
+- **Emission order is fixed.** Start: `started` (the order) then `team-started`
+  (the first presenter). Each advance: `team-finished` / `team-skipped` (the
+  presenter leaving) first, then either `team-started` (the next presenter) or —
+  on the last one — `finished` (`nextStage` = EVALUATION). EVALUATION is parked
+  until Stage 10.2; the `EVALUATION → RESULTS → FINISHED` edges arrive with 10.3.
+
+### Evaluation — server broadcasts (§16.8)
+
+Catalog of the §16.8 "evaluation collection" broadcasts. The constants live in
+`src/game-session/application/events/evaluation-events.ts` (next to the
+game-session use cases that emit them, Design A — exactly as
+commerce/presentation/defense); the evaluation module itself emits nothing.
+**Sub-stage 10.2 emits all three** — SubmitEvaluation records a score,
+ConfirmEvaluation freezes it. Every row is **room-wide**, and — the defining
+rule here — **carries NO numeric score** (§16.8 "intrigue": the running tallies
+stay secret until results, 10.3). The **Status** column records each name's
+disposition.
+
+| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+|---|---|---|---|---|---|---|
+| `server:evaluation:score-submitted` | server | evaluation | room | A captain/host submitted (or re-submitted) one score | §16.8 | Emitted since 10.2 by SubmitEvaluationUseCase (captain `POST team` / host `POST host`), FIRST of the submit pair; payload `{ roomId, targetTeamId, evaluatorType, evaluatorTeamId, created }` — **no numeric score** (`evaluatorTeamId` null for a host) |
+| `server:evaluation:score-confirmed` | server | evaluation | room | A captain/host confirmed (froze) one score | §16.8 | Emitted since 10.2 by ConfirmEvaluationUseCase (`POST team/confirm` / `POST host/confirm`), FIRST of the confirm group — one per frozen row (per-target: exactly one; all-at-once: one per remaining draft); payload `{ roomId, targetTeamId, evaluatorType, evaluatorTeamId }` — **no numeric score** |
+| `server:evaluation:progress-updated` | server | evaluation | room | The running tally changed | §16.8 | Emitted since 10.2 by Submit (always) and Confirm (only when something was frozen), AFTER the score event(s); payload `{ roomId, team, host, totalExpected, complete }` where `team`/`host` are `{ submitted, confirmed, expected }` — **counts only** |
+| `server:evaluation:completed` | server | evaluation | room | The game finished (RESULTS, FINISHED) | §16.8 | Emitted since 10.3 by CalculateResultsUseCase (host `POST results`) AFTER the transaction commits, FIRST of the results pair; payload `{ roomId, stage, status }` (stage RESULTS, status FINISHED) |
+| `server:evaluation:results-calculated` | server | evaluation | room | The final leaderboard | §14.10 | Emitted since 10.3 by CalculateResultsUseCase AFTER commit, right after `completed`; payload `{ roomId, leaderboard }` where each entry is `{ teamId, teamName, earnedScore, presentationScoreRaw, latePenalty, presentationScoreFinal, finalScore, place }` — PUBLIC AGGREGATES (the individual `evaluation_scores` stay private) |
+| `server:evaluation:results-shown` | server | evaluation | room | UI cue to reveal results | §16.8 | **Reserved** — a presentation-layer cue with no server trigger; the leaderboard ships via `results-calculated` / `GET results` |
+
+### Plan name → canonical name (§16.8)
+
+Same derivation as §16.1–16.7: a plan token `x:y` becomes `server:evaluation:x-y`
+in kebab-case (camelCase split on case, e.g. `scoreSubmitted` → `score-submitted`).
+
+| Plan name (§16.8) | Canonical name |
+|---|---|
+| `evaluation:scoreSubmitted` | `server:evaluation:score-submitted` |
+| `evaluation:scoreConfirmed` | `server:evaluation:score-confirmed` |
+| `evaluation:progressUpdated` | `server:evaluation:progress-updated` |
+| `evaluation:completed` | `server:evaluation:completed` |
+| `evaluation:resultsCalculated` | `server:evaluation:results-calculated` |
+
+### Evaluation contract notes (§16.8)
+
+- **Numbers are PRIVATE until results (the §16.8 "intrigue").** No broadcast and
+  no progress payload carries a numeric score — only ids, the `created` flag, and
+  the `{ submitted, confirmed, expected }` counts. The author's OWN numbers come
+  back exclusively in their REST reply (`POST team`/`host` echoes the submitted
+  `EvaluationScore`); there is deliberately NO GET surface for another evaluator's
+  scores until Stage 10.3. `GET rooms/:code/evaluation/progress` is counts-only.
+- **No StartEvaluation, no `started` event.** The room AUTO-entered EVALUATION
+  when the last presenter's defense finished (10.1 `defense:finished`,
+  PRESENTATION_DEFENSE → EVALUATION), so 10.2 adds no start action and no
+  `started` broadcast (it would be additive later if ever needed).
+- **Evaluator never trusted from the body.** A TEAM vote's `evaluatorTeamId` is
+  derived from the acting captain's own team (captain-authz + a symmetric
+  cross-tenant guard); a HOST vote's identity from `room.hostId`. A team can never
+  score itself (`SelfEvaluationError` 403, before any write; the entity backstops
+  the same shape).
+- **Create-or-update + immutable confirm, under the per-room advisory lock** (the
+  FIRST statement of each transaction). Re-submitting an unconfirmed score
+  overwrites it; a confirmed score is frozen (`EvaluationAlreadyConfirmedError`
+  409). Confirm has TWO granularities: per-target (STRICT — 404 if no draft, 409
+  if already confirmed) and all-at-once (omit `targetTeamId` — freezes only the
+  evaluator's remaining drafts, skipping already-confirmed rows so a per-target
+  pass then an all-at-once finish never deadlocks; idempotent when nothing is
+  left). The insert's unique-index 23505 is a defensive net only.
+- **Emission order is fixed.** Submit: `score-submitted` then `progress-updated`.
+  Confirm: one `score-confirmed` per frozen row, then a single `progress-updated`
+  (skipped entirely when an all-at-once confirmed nothing). Results: `completed`
+  then `results-calculated`, BOTH emitted AFTER the transaction commits (⚠️D — the
+  §14.10 finish is irreversible and has no corrective event, so the broadcast must
+  never precede the durable write).
+- **All room-wide.** There is no `client:evaluation:*` surface: every mutation is a
+  REST action — `POST rooms/:code/evaluation/{team,host}`, `.../{team,host}/confirm`
+  and `.../results` (PlayerIdentityGuard / HostAuthGuard, 200) — and
+  `GET rooms/:code/evaluation/{criteria,teams,progress,results}` are the open reads.
+- **10.3 closes the backbone (EVALUATION → RESULTS, then FINISHED).**
+  CalculateResults adds the `EVALUATION: ['RESULTS']` STAGE_FLOW edge and, in ONE
+  transaction, `transitionTo('RESULTS')` then `markFinished` (status FINISHED).
+  RESULTS is TERMINAL — there is deliberately NO `RESULTS → FINISHED` *stage*
+  edge: FINISHED is the room STATUS, set by `markFinished`, not a stage. A repeat
+  call is out of stage (already past EVALUATION) → 409 (idempotency); a partial
+  tally is rejected by the completeness gate (`EvaluationNotCompleteError` 409)
+  unless `force` is set. The individual scores STAY private — `results-calculated`
+  / `GET results` expose only the per-team AGGREGATES.
+
 ## Stage 5.2a — what ships now
 
 Sub-stage 5.2a implements the lobby over **REST** and emits the room-wide

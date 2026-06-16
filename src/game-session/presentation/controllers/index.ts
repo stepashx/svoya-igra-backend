@@ -11,3 +11,7 @@ export * from './shop.controller';
 export * from './inventory.controller';
 // Presentation: real GET requirements + 501 stubs (sub-stage 9.1) — Presentation tag.
 export * from './presentation.controller';
+// Presentation defense (sub-stage 10.1) — Defense tag, game-session owned.
+export * from './defense.controller';
+// Evaluation collection (sub-stage 10.2) — Evaluation tag, game-session owned.
+export * from './evaluation.controller';

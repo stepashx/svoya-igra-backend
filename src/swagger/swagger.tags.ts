@@ -9,6 +9,7 @@ export const SwaggerTag = {
   Gameplay: 'Gameplay',
   Commerce: 'Commerce',
   Presentation: 'Presentation',
+  Defense: 'Defense',
   Evaluation: 'Evaluation',
   Realtime: 'Realtime',
 } as const;

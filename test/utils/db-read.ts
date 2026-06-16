@@ -129,6 +129,75 @@ export async function readTeamSubmissionId(
   return result.rows[0]?.presentation_submission_id ?? null;
 }
 
+/** A persisted evaluation score (§12), narrowed to the fields the 10.2 e2e asserts. */
+export interface EvaluationScoreRow {
+  id: string;
+  target_team_id: string;
+  evaluator_type: string;
+  evaluator_team_id: string | null;
+  host_id: string | null;
+  topic_score: number;
+  design_score: number;
+  total_score: number;
+  weight: number;
+  confirmed_at: Date | null;
+}
+
+/** Every evaluation score recorded for a room (used to assert collection/confirm). */
+export async function readEvaluationScores(
+  roomId: string,
+): Promise<EvaluationScoreRow[]> {
+  const result = await getPool().query<EvaluationScoreRow>(
+    `SELECT id, target_team_id, evaluator_type, evaluator_team_id, host_id,
+            topic_score, design_score, total_score, weight, confirmed_at
+     FROM evaluation_scores WHERE room_id = $1`,
+    [roomId],
+  );
+  return result.rows;
+}
+
+/** A room's lifecycle fields (§14.10) — used to assert the 10.3 game finish. */
+export async function readRoomLifecycle(roomId: string): Promise<{
+  current_stage: string;
+  status: string;
+  finished_at: Date | null;
+} | null> {
+  const result = await getPool().query<{
+    current_stage: string;
+    status: string;
+    finished_at: Date | null;
+  }>('SELECT current_stage, status, finished_at FROM rooms WHERE id = $1', [
+    roomId,
+  ]);
+  return result.rows[0] ?? null;
+}
+
+/** A persisted final result (§14.10), narrowed to the fields the 10.3 e2e asserts. */
+export interface FinalResultRow {
+  id: string;
+  team_id: string;
+  earned_score: number;
+  presentation_score_raw: number;
+  late_penalty: number;
+  presentation_score_final: number;
+  final_score: number;
+  place: number;
+}
+
+/** Every final result for a room, ordered (place, teamId) — the leaderboard. */
+export async function readFinalResults(
+  roomId: string,
+): Promise<FinalResultRow[]> {
+  const result = await getPool().query<FinalResultRow>(
+    `SELECT id, team_id, earned_score, presentation_score_raw, late_penalty,
+            presentation_score_final, final_score, place
+     FROM final_results WHERE room_id = $1
+     ORDER BY place ASC, team_id ASC`,
+    [roomId],
+  );
+  return result.rows;
+}
+
 export async function closeDbReadPool(): Promise<void> {
   if (pool) {
     await pool.end();

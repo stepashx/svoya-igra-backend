@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { AppConfigService } from '../config/app-config.service';
 import { CommerceModule } from '../commerce/commerce.module';
+import { EvaluationModule } from '../evaluation/evaluation.module';
 import { GameplayModule } from '../gameplay/gameplay.module';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
 import { PresentationModule } from '../presentation/presentation.module';
@@ -23,10 +24,13 @@ import {
 } from './application/timers';
 import {
   AdvanceOnTimeoutUseCase,
+  CalculateResultsUseCase,
   CloseRoomUseCase,
   CloseShopUseCase,
+  ConfirmEvaluationUseCase,
   CreateRoomUseCase,
   CreateTeamUseCase,
+  FinishPresentationUseCase,
   JoinRoomUseCase,
   JoinTeamUseCase,
   LeaveTeamUseCase,
@@ -39,9 +43,12 @@ import {
   ReviewAnswerUseCase,
   SelectQuestionUseCase,
   SelectTopicUseCase,
+  SkipPresenterUseCase,
+  StartDefenseUseCase,
   StartGameUseCase,
   StartPresentationPreparationUseCase,
   SubmitAnswerUseCase,
+  SubmitEvaluationUseCase,
   UpdateProfileUseCase,
   UploadPresentationUseCase,
 } from './application/use-cases';
@@ -60,6 +67,8 @@ import {
 } from './infrastructure/persistence';
 import {
   BoardController,
+  DefenseController,
+  EvaluationController,
   GameController,
   InventoryController,
   PlayersController,
@@ -142,6 +151,33 @@ import {
  * read model comes from the imported PresentationModule). The room is already in
  * PRESENTATION_PREPARATION (the 8.2 final-shop close parked it there), so the
  * use case changes no room state. Upload/replace/files stay 501 until 9.3.
+ *
+ * Sub-stage 10.1 wires the presentation defenses (the final game backbone): the
+ * {@link DefenseController} and the StartDefense / FinishPresentation /
+ * SkipPresenter use cases, all emitting `server:defense:*` room-wide. StartDefense
+ * MOVES the stage (PRESENTATION_PREPARATION → PRESENTATION_DEFENSE) like
+ * CloseShop — unlike the 9.2 preparation start. The defense state is fully
+ * DERIVED from the existing columns (the active-team pointer + `turnOrder`), so
+ * there is NO new table, NO timer registry and NO new repository — the room/team
+ * ports are already provided. The last presenter's finish/skip moves the room on
+ * to EVALUATION (parked until 10.2).
+ *
+ * Sub-stage 10.2 imports {@link EvaluationModule} for the score-collection seam
+ * (the two evaluation repository ports + the {@link EvaluationQueryService},
+ * Design A — exactly as Commerce/Presentation) and wires the
+ * {@link EvaluationController} plus the Submit/Confirm use cases, all emitting
+ * `server:evaluation:*` room-wide (counts-only — the §16.8 secrecy). There is no
+ * StartEvaluation: the room auto-entered EVALUATION when the last defense
+ * finished (10.1).
+ *
+ * Sub-stage 10.3 closes the backbone: {@link CalculateResultsUseCase} aggregates
+ * the confirmed scores, writes `final_results`, moves EVALUATION → RESULTS and
+ * finishes the game (status FINISHED) in one transaction, then broadcasts
+ * `evaluation:completed` + `results-calculated` AFTER commit. The final-result
+ * port + the ResultsQueryService come from EvaluationModule; the
+ * presentation-submission port (the latePenalty snapshot) from PresentationModule
+ * — both already imported. The two results routes hang off the existing
+ * EvaluationController.
  */
 @Module({
   imports: [
@@ -150,6 +186,7 @@ import {
     GameplayModule,
     CommerceModule,
     PresentationModule,
+    EvaluationModule,
     // Presentation upload (9.3): in-memory multipart with a size limit and an
     // extension-only fileFilter (BadRequestException → 400). AppConfigService is
     // globally available, so the async factory injects it directly.
@@ -173,6 +210,12 @@ import {
     // Presentation: GET requirements (9.1) + preparation deadline/submissions
     // reads and host start-preparation (9.2); upload/files 501 until 9.3.
     PresentationController,
+    // Presentation defense (sub-stage 10.1; Defense tag): host start/finish/skip
+    // + the public derived state read.
+    DefenseController,
+    // Evaluation collection (sub-stage 10.2; Evaluation tag): captain/host submit
+    // + confirm, public criteria/teams/progress reads.
+    EvaluationController,
   ],
   providers: [
     // Persistence ports → Drizzle adapters.
@@ -221,6 +264,23 @@ import {
     // (FILE_STORAGE_PORT comes transitively from InfrastructureModule, the
     // submission port from the imported PresentationModule).
     UploadPresentationUseCase,
+    // Presentation defense (sub-stage 10.1): host opens the defenses (changes
+    // the stage to PRESENTATION_DEFENSE) and advances/closes the queue. The
+    // state is fully DERIVED (currentTeamId + turnOrder) — no timer registry,
+    // no new repository; the two ports it needs (room/team) are already wired.
+    StartDefenseUseCase,
+    FinishPresentationUseCase,
+    SkipPresenterUseCase,
+    // Evaluation collection (sub-stage 10.2): captain/host submit + confirm. The
+    // two evaluation ports + the EvaluationQueryService come from the imported
+    // EvaluationModule (Design A — exactly as commerce/presentation).
+    SubmitEvaluationUseCase,
+    ConfirmEvaluationUseCase,
+    // Results + game finish (sub-stage 10.3): the host calculates the leaderboard
+    // and finishes the game. The final-result port + ResultsQueryService come
+    // from EvaluationModule; the presentation-submission port (latePenalty
+    // snapshot) from PresentationModule; both are already imported.
+    CalculateResultsUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,
