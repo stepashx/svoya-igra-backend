@@ -10,24 +10,84 @@ share a single backend process/URL.
 This repository is **backend only**. There is no frontend here; the frontend is
 an external consumer of the REST API, WebSocket events, and public file URLs.
 
-> **Foundation stage.** The infrastructure skeleton is in place (config, health,
-> database/storage seams, Swagger, base WebSocket gateway, Docker). There are
-> **no game features, schema, migrations, or seeds yet** — those arrive in later
-> stages (see [Roadmap](#roadmap)).
+> **Status — game backbone complete.** A game now plays end to end, from the
+> lobby through to a finished result. The full 12-stage lifecycle, the REST
+> surface (13 controllers, browsable at Swagger `/docs`), the realtime events
+> ([docs/realtime-events.md](docs/realtime-events.md)), and the data layer
+> (PostgreSQL + Drizzle migrations and static seeds) are all implemented.
+>
+> **In progress / not done:** internal documentation (this stage), further test
+> hardening, and production concerns (deployment, real auth, private storage)
+> deliberately deferred to post-MVP — see [Known limitations](#known-limitations)
+> and [Roadmap](#roadmap).
 
 ## Prerequisites
 
 - **Node.js 22** (LTS) and **npm** (the repo uses `package-lock.json`).
 - **Docker** and **Docker Compose v2** (`docker compose`, not `docker-compose`).
 
-## Quick start (everything in Docker)
+## Setup
+
+The canonical local flow runs the backend on the host against Compose-provided
+PostgreSQL and MinIO:
 
 ```bash
-cp .env.example .env        # local-dev defaults work out of the box
-npm run docker:up           # build + start backend, postgres, minio (detached)
+cp .env.example .env                  # local-dev defaults work out of the box
+docker compose up -d postgres minio   # start the infrastructure
+npm install                           # install dependencies (incl. dev tooling)
+npm run db:migrate                    # create the schema
+npm run db:seed                       # load static catalogs + provision the MinIO bucket
+npm run start:dev                     # run the backend with reload
 ```
 
-Then verify:
+`db:migrate` and `db:seed` run **on the host** — they use `drizzle-kit` /
+`ts-node`, which are dev dependencies absent from the production backend image,
+so they cannot run inside the container and instead connect to the
+Compose-published `localhost` ports. Both are idempotent; see
+[docs/migrations-and-seeds.md](docs/migrations-and-seeds.md).
+
+### Everything in Docker
+
+To run the backend in Compose too, build and start the full stack, then apply
+the schema and seeds from the host (same reason as above):
+
+```bash
+cp .env.example .env
+npm run docker:up     # build + start backend, postgres, minio (detached)
+npm install           # host tooling for the data-layer scripts
+npm run db:migrate
+npm run db:seed
+```
+
+Stop everything:
+
+```bash
+npm run docker:down            # stop & remove containers (keeps data volumes)
+npm run docker:reset:volumes   # also delete postgres + minio data (DESTRUCTIVE)
+```
+
+## npm scripts
+
+| Script | Purpose |
+|---|---|
+| `npm run start:dev` | Run the backend on the host with reload |
+| `npm run start` / `npm run start:prod` | Run without watch / run the compiled `dist/` |
+| `npm run build` | `nest build` → `dist/` |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint (`--max-warnings 0`) |
+| `npm test` | Jest unit tests |
+| `npm run test:e2e` | REST end-to-end tests (need PostgreSQL + MinIO) |
+| `npm run db:migrate` | Apply migrations to the database |
+| `npm run db:generate` | Regenerate migration SQL from the schema (offline) |
+| `npm run db:check` | Validate the migration journal |
+| `npm run db:seed` | Validate + load catalogs, provision the MinIO bucket |
+| `npm run docker:up` | Build images and start the full stack (detached) |
+| `npm run docker:down` | Stop and remove containers (data volumes kept) |
+| `npm run docker:logs` | Follow logs from all services |
+| `npm run docker:reset:volumes` | `down -v` — removes containers **and data** |
+| `npm run docker:config` | Validate & print the resolved Compose config |
+
+## Verifying the stack
 
 | What | URL | Notes |
 |---|---|---|
@@ -36,50 +96,13 @@ Then verify:
 | MinIO console | http://localhost:9001 | login `minioadmin` / `minioadmin` |
 | MinIO S3 API | http://localhost:9000 | used by the backend + public file URLs |
 
-Stop everything:
-
-```bash
-npm run docker:down              # stop & remove containers (keeps data volumes)
-npm run docker:reset:volumes     # also delete postgres + minio data (DESTRUCTIVE)
-```
-
-## Run the backend on the host (against Compose infra)
-
-Useful for fast iteration with `--watch`. Start only the infrastructure in
-Docker, then run the backend locally:
-
-```bash
-cp .env.example .env
-docker compose up -d postgres minio     # just the dependencies
-npm install
-npm run start:dev                        # backend on the host, reads .env
-```
-
-The host `.env` points `DATABASE_URL` / `MINIO_ENDPOINT` at `localhost`, so this
-works directly. Inside Compose those two are rewritten to the service names
-`postgres` / `minio` — see [Host vs container](#host-vs-container).
-
-## npm scripts
-
-| Script | Purpose |
-|---|---|
-| `npm run start:dev` | Run backend on the host with reload |
-| `npm run build` / `typecheck` / `lint` / `test` | Standard quality gates |
-| `npm run docker:config` | Validate & print the resolved Compose config |
-| `npm run docker:up` | Build images and start the full stack (detached) |
-| `npm run docker:down` | Stop and remove containers (data volumes kept) |
-| `npm run docker:logs` | Follow logs from all services |
-| `npm run docker:reset:volumes` | `down -v` — removes containers **and data** |
-
-## Verifying the stack
-
 ### Swagger
 
-`http://localhost:3000/docs` serves the OpenAPI document. Today it contains the
-title/description/version, the feature-area tags (Health, Game Session,
-Gameplay, Commerce, Presentation, Evaluation, Realtime), and the shared error
-response convention. Only the **Health** endpoint is implemented; feature
-endpoints land with their stages.
+`http://localhost:3000/docs` serves the OpenAPI document for the REST surface,
+grouped by the eight feature-area tags (Health, Game Session, Gameplay,
+Commerce, Presentation, Defense, Evaluation, Realtime). It is the browsable
+reference for the REST endpoints; the per-endpoint request/response annotations
+are being formalized in a follow-up documentation sub-stage.
 
 ### Health
 
@@ -98,18 +121,17 @@ reachable and `503` if any is not. Shape:
 }
 ```
 
-> **Expected on a fresh stack:** `database` and `backend` are `ok`, but `storage`
-> reports an error like `MinIO bucket "svoya-igra" does not exist`. The storage
-> probe is read-only and never creates the bucket — bucket/asset provisioning is
-> **Stage 5A**. See [docs/minio.md](docs/minio.md) for an optional one-liner to
-> create the bucket now and turn storage green.
+> **Storage check:** `storage` is green once `npm run db:seed` has provisioned
+> the MinIO bucket. Before that — or if MinIO is down — it reports an error like
+> `MinIO bucket "svoya-igra" does not exist` and the overall status is `503`. The
+> probe is read-only and never creates the bucket. See
+> [docs/minio.md](docs/minio.md).
 
 ### WebSocket
 
-A base Socket.IO gateway is mounted on the same process (path `/socket.io`). It
-handles connect/disconnect and transport-level room grouping only — there are
-**no game events yet**. The naming convention and the event contract seam live
-in [docs/realtime-events.md](docs/realtime-events.md).
+REST and WebSocket (Socket.IO, path `/socket.io`) share the same backend process
+and URL. The event contracts — naming, payloads, rooms, reconnect — are
+documented in [docs/realtime-events.md](docs/realtime-events.md).
 
 ### PostgreSQL / MinIO
 
@@ -118,16 +140,36 @@ docker compose ps          # STATUS column shows (healthy) for postgres & minio
 docker compose logs minio  # or postgres, to inspect a specific service
 ```
 
+## Architecture
+
+- **Clean / Hexagonal** layering: domain (entities, value objects, ports) →
+  application (use cases) → infrastructure (Drizzle persistence, MinIO storage)
+  → presentation (controllers, gateways), wired with NestJS dependency injection.
+- **NestJS** serves REST and WebSocket (Socket.IO) from one process; config is
+  validated once at startup and read only through the typed Config module, never
+  `process.env` directly.
+- **Eight feature areas** (the Swagger tags): Health, Game Session, Gameplay,
+  Commerce, Presentation, Defense, Evaluation, Realtime.
+- **12-stage game lifecycle:** `LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD →
+  QUESTION_OPENED → ANSWER_REVIEW → SHOP → PRESENTATION_PREPARATION →
+  PRESENTATION_DEFENSE → EVALUATION → RESULTS → FINISHED`.
+- **PostgreSQL + Drizzle** (16 tables across five schema areas, one migration)
+  for relational state; **MinIO** for file bytes (QR assets, presentation
+  uploads), with only metadata in the database.
+
 ## Continuous integration
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs a foundation quality
-gate on GitHub Actions for every push and pull request to `master` (and on demand
-from the Actions tab): `typecheck → lint → build → test`, mirroring the npm
-scripts above so CI green means locally green. Node is pinned by
-[`.nvmrc`](.nvmrc). An optional **manual** `docker` job validates the image builds
-(it never pushes). There is **no deployment** — that is deferred until hosting is
-chosen, and migrations/seeds (Stage 5A) are not part of CI yet.
-See [docs/ci.md](docs/ci.md).
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and
+pull request to `master` (and on demand from the Actions tab), with three jobs:
+
+- **Quality gate** — `typecheck → lint → build → test`, plus a schema-drift
+  guard (`db:generate` must produce no diff).
+- **E2E** — REST end-to-end tests against live PostgreSQL + MinIO, after
+  `db:migrate` and `db:seed`.
+- **Docker (optional)** — manual-only image build, never pushed.
+
+There is **no deployment** — deferred until hosting is chosen. See
+[docs/ci.md](docs/ci.md).
 
 ## Host vs container
 
@@ -152,33 +194,57 @@ See [.env.example](.env.example) for the full annotated variable list and
 - **Port already in use (`3000`, `5432`, `9000`, `9001`)** — another process or
   an old stack is bound. Stop it, or change `PORT` / `POSTGRES_PORT` /
   `MINIO_PORT` / `MINIO_CONSOLE_PORT` in `.env`.
-- **Health shows `storage: error` (bucket does not exist)** — expected on a
-  fresh stack; create the bucket per [docs/minio.md](docs/minio.md) (Stage 5A
-  will automate this).
+- **Health shows `storage: error` (bucket does not exist)** — the bucket isn't
+  provisioned yet. Run `npm run db:seed` (see [docs/minio.md](docs/minio.md)).
+- **Feature endpoints error (e.g. `relation "…" does not exist`) or the board is
+  empty** — the schema or catalogs aren't loaded. Run `npm run db:migrate`, then
+  `npm run db:seed`.
 - **Backend can't reach the database/MinIO from the host** — start the
   dependencies (`docker compose up -d postgres minio`) and confirm `.env` uses
   `localhost`.
 - **Stale data after config changes** — `npm run docker:reset:volumes` wipes the
-  postgres/minio volumes for a clean slate (deletes local data).
+  postgres/minio volumes for a clean slate (deletes local data); re-run
+  `db:migrate` and `db:seed` afterward.
 - **Rebuild after dependency changes** — `docker compose up --build` (or
   `npm run docker:up`) rebuilds the backend image.
 
 ## Documentation
 
 - [docs/local-development.md](docs/local-development.md) — detailed local dev flow.
-- [docs/minio.md](docs/minio.md) — MinIO console, bucket, and storage conventions.
-- [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md) — **placeholder**;
-  schema/migrations/seeds are Stage 5A.
-- [docs/realtime-events.md](docs/realtime-events.md) — WebSocket naming
-  convention and event contract seam.
-- [docs/ci.md](docs/ci.md) — GitHub Actions CI pipeline (triggers, quality gate,
-  optional Docker job, deferred deploy).
+- [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md) — schema,
+  migrations, and the seed flow.
+- [docs/minio.md](docs/minio.md) — MinIO console, bucket provisioning, and
+  storage conventions.
+- [docs/realtime-events.md](docs/realtime-events.md) — WebSocket event contracts.
+- [docs/ci.md](docs/ci.md) — GitHub Actions pipeline (quality gate, E2E, optional
+  Docker job).
+
+## Known limitations
+
+This is an **educational MVP** scoped to a single demo game room with a handful
+of participants — not a hardened production service.
+
+- **Public-read object storage.** The MinIO bucket is served via plain anonymous
+  public URLs; no signed URLs, private buckets, CDN, or separate-origin serving.
+  Stored-XSS is mitigated (uploads get a server-canonical `Content-Type` plus
+  `Content-Disposition: attachment`), but the bucket is public by design. See
+  [docs/minio.md](docs/minio.md#known-limitations).
+- **In-memory presence and timers.** Socket presence and the answer / shop /
+  presentation timers live in process memory, so they are lost on restart and
+  assume a **single backend instance** (no horizontal scaling).
+- **Educational auth.** There is no real authentication: hosts and players are
+  identified by reconnect tokens, `FRONTEND_ORIGIN` / `WS_CORS_ORIGIN` default to
+  `*`, and the MinIO credentials are well-known defaults. Lock these down before
+  any shared or public environment.
+- **No deployment.** No deploy jobs, hosting, or environment promotion —
+  deferred until hosting is decided.
 
 ## Roadmap
 
-- **Stage 3E** — basic CI on GitHub Actions (typecheck → lint → build → test,
-  plus an optional manual Docker build). *Done — see [docs/ci.md](docs/ci.md).*
-- **Stage 5A** — Drizzle schema, versioned migrations, required static seeds, and
-  the MinIO QR `.svg` placement procedure.
-- **Stage 5B+** — Game Session, Gameplay, Commerce, Presentation, and Evaluation
-  feature areas, plus their REST endpoints and WebSocket events.
+- **Stages 1–10 — game backbone.** *Done.* Infrastructure and config, data layer
+  (schema/migrations/seeds), lobby and team setup, game board and battle cycle,
+  scoring, shop & QR tools, presentation upload, defense, evaluation, and final
+  results — a full game from lobby to finished.
+- **Stage 11 — internal documentation & cleanup.** *In progress.* Bringing the
+  README and `docs/` in line with the implemented backbone (this change).
+- **Stage 12 — testing & hardening.** *Next.*

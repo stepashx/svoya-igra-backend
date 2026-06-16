@@ -16,7 +16,7 @@ export class DatabaseService implements OnModuleDestroy {
     @Inject(DRIZZLE) private readonly drizzle: DrizzleDatabase,
   ) {}
 
-  /** The Drizzle client. Repository adapters (Stage 5A) build queries on this. */
+  /** The Drizzle client. Repository adapters build queries on this. */
   get db(): DrizzleDatabase {
     return this.drizzle;
   }

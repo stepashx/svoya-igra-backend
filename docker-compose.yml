@@ -72,7 +72,7 @@ services:
         condition: service_healthy
     healthcheck:
       # Liveness only: any HTTP response means the process serves requests.
-      # /api/health may report 503 until the MinIO bucket exists (Stage 5A).
+      # /api/health may report 503 until the MinIO bucket exists (run npm run db:seed).
       test:
         - "CMD"
         - "node"

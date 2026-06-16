@@ -70,7 +70,7 @@ export class StorageService implements FileStoragePort {
   /**
    * Read-only reachability probe: confirms MinIO is reachable and the
    * configured bucket exists. Throws a clear reason otherwise. Never creates
-   * the bucket — provisioning is a deploy/seed concern (Stage 5A).
+   * the bucket — provisioning is a deploy/seed concern (see npm run db:seed).
    */
   async checkConnection(): Promise<void> {
     const bucket = this.config.storage.bucket;
