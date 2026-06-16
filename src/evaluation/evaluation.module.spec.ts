@@ -1,14 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DatabaseService } from '../infrastructure/database/database.service';
 import { TransactionContext } from '../infrastructure/database/transaction-context';
-import { EvaluationQueryService } from './application/queries';
+import {
+  EvaluationQueryService,
+  ResultsQueryService,
+} from './application/queries';
 import {
   EVALUATION_CRITERION_REPOSITORY_PORT,
+  EVALUATION_FINAL_RESULT_REPOSITORY_PORT,
   EVALUATION_SCORE_REPOSITORY_PORT,
 } from './domain/ports';
 import {
   DrizzleEvaluationCriterionRepository,
   DrizzleEvaluationScoreRepository,
+  DrizzleFinalResultRepository,
 } from './infrastructure/persistence';
 
 /**
@@ -35,11 +40,16 @@ describe('EvaluationModule wiring', () => {
           provide: EVALUATION_CRITERION_REPOSITORY_PORT,
           useClass: DrizzleEvaluationCriterionRepository,
         },
+        {
+          provide: EVALUATION_FINAL_RESULT_REPOSITORY_PORT,
+          useClass: DrizzleFinalResultRepository,
+        },
         EvaluationQueryService,
+        ResultsQueryService,
       ],
     }).compile();
 
-  it('resolves the two repository ports to their Drizzle adapters', async () => {
+  it('resolves the three repository ports to their Drizzle adapters', async () => {
     const moduleRef = await buildModule();
     expect(moduleRef.get(EVALUATION_SCORE_REPOSITORY_PORT)).toBeInstanceOf(
       DrizzleEvaluationScoreRepository,
@@ -47,13 +57,19 @@ describe('EvaluationModule wiring', () => {
     expect(moduleRef.get(EVALUATION_CRITERION_REPOSITORY_PORT)).toBeInstanceOf(
       DrizzleEvaluationCriterionRepository,
     );
+    expect(
+      moduleRef.get(EVALUATION_FINAL_RESULT_REPOSITORY_PORT),
+    ).toBeInstanceOf(DrizzleFinalResultRepository);
     await moduleRef.close();
   });
 
-  it('instantiates the evaluation read model', async () => {
+  it('instantiates the evaluation read models', async () => {
     const moduleRef = await buildModule();
     expect(moduleRef.get(EvaluationQueryService)).toBeInstanceOf(
       EvaluationQueryService,
+    );
+    expect(moduleRef.get(ResultsQueryService)).toBeInstanceOf(
+      ResultsQueryService,
     );
     await moduleRef.close();
   });

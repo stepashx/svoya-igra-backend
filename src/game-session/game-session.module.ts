@@ -24,6 +24,7 @@ import {
 } from './application/timers';
 import {
   AdvanceOnTimeoutUseCase,
+  CalculateResultsUseCase,
   CloseRoomUseCase,
   CloseShopUseCase,
   ConfirmEvaluationUseCase,
@@ -167,8 +168,16 @@ import {
  * {@link EvaluationController} plus the Submit/Confirm use cases, all emitting
  * `server:evaluation:*` room-wide (counts-only — the §16.8 secrecy). There is no
  * StartEvaluation: the room auto-entered EVALUATION when the last defense
- * finished (10.1). Aggregation (presentationScoreRaw / finalScore / places) is
- * Stage 10.3 — `final_results` and the EVALUATION → RESULTS edge stay untouched.
+ * finished (10.1).
+ *
+ * Sub-stage 10.3 closes the backbone: {@link CalculateResultsUseCase} aggregates
+ * the confirmed scores, writes `final_results`, moves EVALUATION → RESULTS and
+ * finishes the game (status FINISHED) in one transaction, then broadcasts
+ * `evaluation:completed` + `results-calculated` AFTER commit. The final-result
+ * port + the ResultsQueryService come from EvaluationModule; the
+ * presentation-submission port (the latePenalty snapshot) from PresentationModule
+ * — both already imported. The two results routes hang off the existing
+ * EvaluationController.
  */
 @Module({
   imports: [
@@ -267,6 +276,11 @@ import {
     // EvaluationModule (Design A — exactly as commerce/presentation).
     SubmitEvaluationUseCase,
     ConfirmEvaluationUseCase,
+    // Results + game finish (sub-stage 10.3): the host calculates the leaderboard
+    // and finishes the game. The final-result port + ResultsQueryService come
+    // from EvaluationModule; the presentation-submission port (latePenalty
+    // snapshot) from PresentationModule; both are already imported.
+    CalculateResultsUseCase,
     // Read models.
     RoomSnapshotAssembler,
     LobbyQueryService,

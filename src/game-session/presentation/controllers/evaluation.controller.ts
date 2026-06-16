@@ -15,14 +15,19 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
-import { EvaluationQueryService } from '../../../evaluation/application/queries';
+import {
+  EvaluationQueryService,
+  ResultsQueryService,
+} from '../../../evaluation/application/queries';
 import { LobbyQueryService } from '../../application/queries';
 import {
+  CalculateResultsUseCase,
   ConfirmEvaluationUseCase,
   SubmitEvaluationUseCase,
 } from '../../application/use-cases';
 import { Player } from '../../domain/entities';
 import {
+  CalculateResultsRequestDto,
   ConfirmEvaluationRequestDto,
   SubmitEvaluationRequestDto,
 } from '../dto/request';
@@ -31,6 +36,7 @@ import {
   CriterionResponseDto,
   EvaluationTargetResponseDto,
   ProgressResponseDto,
+  ResultsResponseDto,
   SubmitEvaluationResponseDto,
 } from '../dto/response';
 import {
@@ -47,6 +53,7 @@ import {
   toCriterionResponse,
   toEvaluationTargetResponse,
   toProgressResponse,
+  toResultsResponse,
   toSubmitEvaluationResponse,
 } from '../mappers';
 
@@ -66,6 +73,12 @@ import {
  * guard): the evaluator is taken from the guard-resolved principal, NEVER the
  * body. The author's own numbers come back ONLY in the POST reply — there is NO
  * GET for another evaluator's scores until results (10.3).
+ *
+ * Sub-stage 10.3 adds the results pair (the final backbone step):
+ * - `POST results` — the host calculates the leaderboard and FINISHES the game
+ *   (HostAuthGuard; 200). The body's `force` opts past the completeness gate.
+ * - `GET results` — the public leaderboard (AGGREGATES only; `[]` before
+ *   calculation, even after the game is FINISHED — reconnect-safe).
  */
 @ApiTags(SwaggerTag.Evaluation)
 @Controller('rooms/:code/evaluation')
@@ -73,7 +86,9 @@ export class EvaluationController {
   constructor(
     private readonly submitEvaluation: SubmitEvaluationUseCase,
     private readonly confirmEvaluation: ConfirmEvaluationUseCase,
+    private readonly calculateResults: CalculateResultsUseCase,
     private readonly evaluationQuery: EvaluationQueryService,
+    private readonly resultsQuery: ResultsQueryService,
     private readonly lobby: LobbyQueryService,
   ) {}
 
@@ -188,6 +203,37 @@ export class EvaluationController {
         evaluator: { type: 'HOST' },
         targetTeamId: body.targetTeamId,
       }),
+    );
+  }
+
+  @Post('results')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(HostAuthGuard)
+  @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
+  @ApiOperation({
+    summary: 'Calculate the final results and finish the game (host only)',
+  })
+  @ApiOkResponse({ type: ResultsResponseDto })
+  async calculate(
+    @CurrentHost() host: HostContext,
+    @Body() body: CalculateResultsRequestDto,
+  ): Promise<ResultsResponseDto> {
+    const result = await this.calculateResults.execute({
+      roomId: host.roomId,
+      force: body.force,
+    });
+    return toResultsResponse(result.leaderboard);
+  }
+
+  @Get('results')
+  @ApiOperation({ summary: 'Get the final leaderboard (public)' })
+  @ApiOkResponse({ type: ResultsResponseDto })
+  async getResults(@Param('code') code: string): Promise<ResultsResponseDto> {
+    const room = await this.lobby.getRoom(code);
+    const teams = await this.lobby.listTeams(code);
+    const teamNames = new Map(teams.map((team) => [team.id, team.name.value]));
+    return toResultsResponse(
+      await this.resultsQuery.getResults(room.id, teamNames),
     );
   }
 }

@@ -17,8 +17,11 @@ const DEFAULT_TOTAL_QUESTIONS = 30;
  * SHOP returns to GAME_BOARD or, once the board is exhausted, moves on to
  * PRESENTATION_PREPARATION (the final shop, 8.2). The presentation phase is
  * linear: PRESENTATION_PREPARATION → PRESENTATION_DEFENSE (StartDefense opens
- * the defenses, 10.1) → EVALUATION (the last presenter finishes/skips, 10.1).
- * The later edges (EVALUATION → RESULTS → FINISHED) arrive with Stage 10.3.
+ * the defenses, 10.1) → EVALUATION (the last presenter finishes/skips, 10.1) →
+ * RESULTS (CalculateResults aggregates and finishes the game, 10.3). RESULTS is
+ * TERMINAL — it has no outgoing edge: the game leaves ACTIVE for the FINISHED
+ * *status* via {@link markFinished} (not a stage transition), in the same
+ * CalculateResults call.
  */
 const STAGE_FLOW: Readonly<Partial<Record<GameStage, readonly GameStage[]>>> = {
   LOBBY: ['TEAM_SETUP'],
@@ -30,6 +33,7 @@ const STAGE_FLOW: Readonly<Partial<Record<GameStage, readonly GameStage[]>>> = {
   SHOP: ['GAME_BOARD', 'PRESENTATION_PREPARATION'],
   PRESENTATION_PREPARATION: ['PRESENTATION_DEFENSE'],
   PRESENTATION_DEFENSE: ['EVALUATION'],
+  EVALUATION: ['RESULTS'],
 };
 
 /** Fields required to start a brand-new room (caller-supplied id and identity). */

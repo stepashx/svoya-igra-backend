@@ -545,8 +545,9 @@ disposition.
 | `server:evaluation:score-submitted` | server | evaluation | room | A captain/host submitted (or re-submitted) one score | §16.8 | Emitted since 10.2 by SubmitEvaluationUseCase (captain `POST team` / host `POST host`), FIRST of the submit pair; payload `{ roomId, targetTeamId, evaluatorType, evaluatorTeamId, created }` — **no numeric score** (`evaluatorTeamId` null for a host) |
 | `server:evaluation:score-confirmed` | server | evaluation | room | A captain/host confirmed (froze) one score | §16.8 | Emitted since 10.2 by ConfirmEvaluationUseCase (`POST team/confirm` / `POST host/confirm`), FIRST of the confirm group — one per frozen row (per-target: exactly one; all-at-once: one per remaining draft); payload `{ roomId, targetTeamId, evaluatorType, evaluatorTeamId }` — **no numeric score** |
 | `server:evaluation:progress-updated` | server | evaluation | room | The running tally changed | §16.8 | Emitted since 10.2 by Submit (always) and Confirm (only when something was frozen), AFTER the score event(s); payload `{ roomId, team, host, totalExpected, complete }` where `team`/`host` are `{ submitted, confirmed, expected }` — **counts only** |
-| `server:evaluation:completed` | server | evaluation | room | All scores confirmed | §16.8 | **Reserved — Stage 10.3** (aggregation). Not emitted in 10.2; `complete` is derived in `progress-updated` but never acted upon |
-| `server:evaluation:results-*` | server | evaluation | room | Final scores / places | §14.10 | **Reserved — Stage 10.3** (presentationScoreRaw / finalScore / places / tie-break). Not defined in 10.2 |
+| `server:evaluation:completed` | server | evaluation | room | The game finished (RESULTS, FINISHED) | §16.8 | Emitted since 10.3 by CalculateResultsUseCase (host `POST results`) AFTER the transaction commits, FIRST of the results pair; payload `{ roomId, stage, status }` (stage RESULTS, status FINISHED) |
+| `server:evaluation:results-calculated` | server | evaluation | room | The final leaderboard | §14.10 | Emitted since 10.3 by CalculateResultsUseCase AFTER commit, right after `completed`; payload `{ roomId, leaderboard }` where each entry is `{ teamId, teamName, earnedScore, presentationScoreRaw, latePenalty, presentationScoreFinal, finalScore, place }` — PUBLIC AGGREGATES (the individual `evaluation_scores` stay private) |
+| `server:evaluation:results-shown` | server | evaluation | room | UI cue to reveal results | §16.8 | **Reserved** — a presentation-layer cue with no server trigger; the leaderboard ships via `results-calculated` / `GET results` |
 
 ### Plan name → canonical name (§16.8)
 
@@ -558,6 +559,8 @@ in kebab-case (camelCase split on case, e.g. `scoreSubmitted` → `score-submitt
 | `evaluation:scoreSubmitted` | `server:evaluation:score-submitted` |
 | `evaluation:scoreConfirmed` | `server:evaluation:score-confirmed` |
 | `evaluation:progressUpdated` | `server:evaluation:progress-updated` |
+| `evaluation:completed` | `server:evaluation:completed` |
+| `evaluation:resultsCalculated` | `server:evaluation:results-calculated` |
 
 ### Evaluation contract notes (§16.8)
 
@@ -586,15 +589,23 @@ in kebab-case (camelCase split on case, e.g. `scoreSubmitted` → `score-submitt
   left). The insert's unique-index 23505 is a defensive net only.
 - **Emission order is fixed.** Submit: `score-submitted` then `progress-updated`.
   Confirm: one `score-confirmed` per frozen row, then a single `progress-updated`
-  (skipped entirely when an all-at-once confirmed nothing).
-- **All room-wide, no client commands.** There is no `client:evaluation:*`
-  surface: every mutation is a REST action — `POST rooms/:code/evaluation/{team,
-  host}` and `.../{team,host}/confirm` (PlayerIdentityGuard / HostAuthGuard, 200)
-  — and `GET rooms/:code/evaluation/{criteria,teams,progress}` are the open reads.
-- **EVALUATION stays terminal in 10.2.** This sub-stage changes no room stage and
-  adds no STAGE_FLOW edge; `final_results`, `markFinished`, and the
-  `EVALUATION → RESULTS → FINISHED` edges all arrive with Stage 10.3, together
-  with `evaluation:completed` / `results-*`.
+  (skipped entirely when an all-at-once confirmed nothing). Results: `completed`
+  then `results-calculated`, BOTH emitted AFTER the transaction commits (⚠️D — the
+  §14.10 finish is irreversible and has no corrective event, so the broadcast must
+  never precede the durable write).
+- **All room-wide.** There is no `client:evaluation:*` surface: every mutation is a
+  REST action — `POST rooms/:code/evaluation/{team,host}`, `.../{team,host}/confirm`
+  and `.../results` (PlayerIdentityGuard / HostAuthGuard, 200) — and
+  `GET rooms/:code/evaluation/{criteria,teams,progress,results}` are the open reads.
+- **10.3 closes the backbone (EVALUATION → RESULTS, then FINISHED).**
+  CalculateResults adds the `EVALUATION: ['RESULTS']` STAGE_FLOW edge and, in ONE
+  transaction, `transitionTo('RESULTS')` then `markFinished` (status FINISHED).
+  RESULTS is TERMINAL — there is deliberately NO `RESULTS → FINISHED` *stage*
+  edge: FINISHED is the room STATUS, set by `markFinished`, not a stage. A repeat
+  call is out of stage (already past EVALUATION) → 409 (idempotency); a partial
+  tally is rejected by the completeness gate (`EvaluationNotCompleteError` 409)
+  unless `force` is set. The individual scores STAY private — `results-calculated`
+  / `GET results` expose only the per-team AGGREGATES.
 
 ## Stage 5.2a — what ships now
 

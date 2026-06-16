@@ -6,27 +6,35 @@
  * exactly as {@link CommerceEvent} / {@link DefenseEvent}; the evaluation module
  * itself emits nothing.
  *
- * Sub-stage 10.2 emits ALL three:
+ * Sub-stage 10.2 emits the first three (collection):
  * - `score-submitted` — a captain/host submitted (or re-submitted) one score
  *   (SubmitEvaluationUseCase), FIRST of the submit pair.
  * - `score-confirmed` — a captain/host froze a score (ConfirmEvaluationUseCase),
  *   FIRST of the confirm pair.
  * - `progress-updated` — the running tally changed (after either action).
  *
- * Audience: all three are ROOM-WIDE. Secrecy (§16.8 "intrigue"): NONE of the
- * payloads carry a numeric score — only ids, counts and flags. The author's own
- * numbers come back exclusively in their REST reply, never in a broadcast, and
- * there is no GET surface for another evaluator's scores until results (10.3).
+ * Sub-stage 10.3 adds the final pair (results), emitted by CalculateResults
+ * AFTER the transaction commits (the §14.10 finish is irreversible — there is no
+ * corrective event, so the broadcast must not precede the durable write):
+ * - `completed` — the game finished; carries `{ roomId, stage, status }`
+ *   (stage RESULTS, status FINISHED).
+ * - `results-calculated` — the final leaderboard; carries `{ roomId, leaderboard }`
+ *   where each entry is a PUBLIC AGGREGATE (no individual evaluator scores).
  *
- * Reserved for 10.3 (NOT defined here): `server:evaluation:completed` and the
- * `server:evaluation:results-*` family (aggregation/places). There is also no
- * `started` event — the room auto-enters EVALUATION when the last defense
- * finishes (10.1 `defense:finished`), so no StartEvaluation, no `started`.
+ * Audience: ALL are ROOM-WIDE. Secrecy (§16.8 "intrigue"): the COLLECTION
+ * payloads carry no numeric score — only ids, counts and flags. The RESULTS
+ * payloads do carry the computed aggregates (that secrecy lifts once the game is
+ * over), but never the individual `evaluation_scores` (they stay private).
+ *
+ * Reserved (NOT defined here): `server:evaluation:results-shown` — a UI cue with
+ * no server trigger.
  */
 export const EvaluationEvent = {
   ScoreSubmitted: 'server:evaluation:score-submitted',
   ScoreConfirmed: 'server:evaluation:score-confirmed',
   ProgressUpdated: 'server:evaluation:progress-updated',
+  Completed: 'server:evaluation:completed',
+  ResultsCalculated: 'server:evaluation:results-calculated',
 } as const;
 
 export type EvaluationEvent =

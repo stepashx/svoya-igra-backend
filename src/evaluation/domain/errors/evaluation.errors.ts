@@ -125,3 +125,37 @@ export class InvalidEvaluatorError extends DomainRuleError {
     super(message);
   }
 }
+
+/**
+ * Results were requested before every expected confirmation landed (§14.10,
+ * Stage 10.3). The load-bearing guard is {@link CalculateResultsUseCase}, which
+ * checks {@link EvaluationProgress.complete} BEFORE any mutation: completing the
+ * game is irreversible ({@link Room.markFinished} cannot be undone), so an early
+ * POST must surface a recoverable 409 rather than finishing the game on a partial
+ * tally. The host can force past this gate (`force: true`) to end deliberately.
+ */
+export class EvaluationNotCompleteError extends DomainRuleError {
+  readonly code = 'EVALUATION_NOT_COMPLETE';
+
+  constructor(message = 'Not all evaluations have been confirmed yet.') {
+    super(message);
+  }
+}
+
+/**
+ * Results were calculated twice for the same room (§14.10, Stage 10.3). The
+ * primary idempotency guard is the stage gate (a second CalculateResults finds
+ * the room already past EVALUATION → {@link UnexpectedGameStageError}); this is
+ * the DEFENSIVE backstop translated by the adapter from the
+ * `final_results_room_id_team_id_uq` 23505, so a racing duplicate insert surfaces
+ * a clean 409 rather than a 500. Results are write-once — never an upsert.
+ */
+export class ResultsAlreadyCalculatedError extends DomainRuleError {
+  readonly code = 'RESULTS_ALREADY_CALCULATED';
+
+  constructor(
+    message = 'Final results have already been calculated for this room.',
+  ) {
+    super(message);
+  }
+}

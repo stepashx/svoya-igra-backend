@@ -1,13 +1,18 @@
 import { Module } from '@nestjs/common';
 import { InfrastructureModule } from '../infrastructure/infrastructure.module';
-import { EvaluationQueryService } from './application/queries';
+import {
+  EvaluationQueryService,
+  ResultsQueryService,
+} from './application/queries';
 import {
   EVALUATION_CRITERION_REPOSITORY_PORT,
+  EVALUATION_FINAL_RESULT_REPOSITORY_PORT,
   EVALUATION_SCORE_REPOSITORY_PORT,
 } from './domain/ports';
 import {
   DrizzleEvaluationCriterionRepository,
   DrizzleEvaluationScoreRepository,
+  DrizzleFinalResultRepository,
 } from './infrastructure/persistence';
 
 /**
@@ -20,9 +25,15 @@ import {
  * `EvaluationScore` fact and `EvaluationCriterion` read model, the two Drizzle
  * repositories, and the read-only {@link EvaluationQueryService} (progress
  * counts + criteria catalog). The exported ports + query feed the game-session
- * Submit/Confirm use cases and the EvaluationController. Aggregation
- * (presentationScoreRaw / finalScore / places) is Stage 10.3 and lives nowhere
- * here yet — `final_results` is untouched.
+ * Submit/Confirm use cases and the EvaluationController.
+ *
+ * Sub-stage 10.3 closes the backbone: the {@link FinalResult} write-once fact,
+ * its Drizzle adapter (`final_results`), and the read-only
+ * {@link ResultsQueryService} (the public leaderboard — AGGREGATES only, the
+ * individual scores stay private). The exported final-result port +
+ * ResultsQueryService feed the game-session CalculateResults use case and the
+ * EvaluationController's results routes; the aggregation, places and game
+ * finish live in that use case (Design A).
  *
  * Headless and acyclic: it imports ONLY InfrastructureModule, NEVER
  * game-session — the graph game-session → evaluation → infrastructure stays
@@ -43,14 +54,23 @@ import {
       provide: EVALUATION_CRITERION_REPOSITORY_PORT,
       useClass: DrizzleEvaluationCriterionRepository,
     },
-    // Read model (progress counts + criteria catalog).
+    // Final-result persistence (10.3) → Drizzle adapter (write-once).
+    {
+      provide: EVALUATION_FINAL_RESULT_REPOSITORY_PORT,
+      useClass: DrizzleFinalResultRepository,
+    },
+    // Read models (progress counts + criteria catalog; the final leaderboard).
     EvaluationQueryService,
+    ResultsQueryService,
   ],
   exports: [
-    // Consumed by the game-session Submit/Confirm use cases + the controller.
+    // Consumed by the game-session Submit/Confirm/CalculateResults use cases +
+    // the controller. The adapters themselves are NOT exported (only the ports).
     EVALUATION_SCORE_REPOSITORY_PORT,
     EVALUATION_CRITERION_REPOSITORY_PORT,
+    EVALUATION_FINAL_RESULT_REPOSITORY_PORT,
     EvaluationQueryService,
+    ResultsQueryService,
   ],
 })
 export class EvaluationModule {}

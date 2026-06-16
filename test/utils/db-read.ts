@@ -156,6 +156,48 @@ export async function readEvaluationScores(
   return result.rows;
 }
 
+/** A room's lifecycle fields (§14.10) — used to assert the 10.3 game finish. */
+export async function readRoomLifecycle(roomId: string): Promise<{
+  current_stage: string;
+  status: string;
+  finished_at: Date | null;
+} | null> {
+  const result = await getPool().query<{
+    current_stage: string;
+    status: string;
+    finished_at: Date | null;
+  }>('SELECT current_stage, status, finished_at FROM rooms WHERE id = $1', [
+    roomId,
+  ]);
+  return result.rows[0] ?? null;
+}
+
+/** A persisted final result (§14.10), narrowed to the fields the 10.3 e2e asserts. */
+export interface FinalResultRow {
+  id: string;
+  team_id: string;
+  earned_score: number;
+  presentation_score_raw: number;
+  late_penalty: number;
+  presentation_score_final: number;
+  final_score: number;
+  place: number;
+}
+
+/** Every final result for a room, ordered (place, teamId) — the leaderboard. */
+export async function readFinalResults(
+  roomId: string,
+): Promise<FinalResultRow[]> {
+  const result = await getPool().query<FinalResultRow>(
+    `SELECT id, team_id, earned_score, presentation_score_raw, late_penalty,
+            presentation_score_final, final_score, place
+     FROM final_results WHERE room_id = $1
+     ORDER BY place ASC, team_id ASC`,
+    [roomId],
+  );
+  return result.rows;
+}
+
 export async function closeDbReadPool(): Promise<void> {
   if (pool) {
     await pool.end();

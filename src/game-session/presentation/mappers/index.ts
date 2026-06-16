@@ -16,3 +16,5 @@ export * from './presentation.presentation-mapper';
 export * from './defense.presentation-mapper';
 // Evaluation presentation mappers (sub-stage 10.2).
 export * from './evaluation.presentation-mapper';
+// Results presentation mappers (sub-stage 10.3).
+export * from './results.presentation-mapper';

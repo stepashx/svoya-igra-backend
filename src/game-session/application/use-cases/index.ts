@@ -35,3 +35,5 @@ export type { DefenseAdvanceResult } from './defense-advance';
 // Evaluation collection (sub-stage 10.2).
 export * from './submit-evaluation.use-case';
 export * from './confirm-evaluation.use-case';
+// Results + game finish (sub-stage 10.3) — the final backbone step.
+export * from './calculate-results.use-case';

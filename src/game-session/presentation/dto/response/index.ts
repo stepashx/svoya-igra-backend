@@ -17,3 +17,5 @@ export * from './presentation.response';
 export * from './defense.response';
 // Evaluation response DTOs (sub-stage 10.2).
 export * from './evaluation.response';
+// Results response DTOs (sub-stage 10.3).
+export * from './results.response';
