@@ -16,8 +16,9 @@ an external consumer of the REST API, WebSocket events, and public file URLs.
 > ([docs/realtime-events.md](docs/realtime-events.md)), and the data layer
 > (PostgreSQL + Drizzle migrations and static seeds) are all implemented.
 >
-> **In progress / not done:** internal documentation (this stage), further test
-> hardening, and production concerns (deployment, real auth, private storage)
+> Internal documentation (this stage) is complete — this README and the `docs/`
+> set are in line with the implemented backbone. **Not yet done:** further test
+> hardening and production concerns (deployment, real auth, private storage)
 > deliberately deferred to post-MVP — see [Known limitations](#known-limitations)
 > and [Roadmap](#roadmap).
 
@@ -100,9 +101,10 @@ npm run docker:reset:volumes   # also delete postgres + minio data (DESTRUCTIVE)
 
 `http://localhost:3000/docs` serves the OpenAPI document for the REST surface,
 grouped by the eight feature-area tags (Health, Game Session, Gameplay,
-Commerce, Presentation, Defense, Evaluation, Realtime). It is the browsable
-reference for the REST endpoints; the per-endpoint request/response annotations
-are being formalized in a follow-up documentation sub-stage.
+Commerce, Presentation, Defense, Evaluation, Realtime). It is the complete
+browsable reference for the REST endpoints: every endpoint carries its
+request/response DTOs, the shared error-envelope response, per-endpoint 4xx
+status codes, and a file-picker on the upload endpoints.
 
 ### Health
 
@@ -210,12 +212,17 @@ See [.env.example](.env.example) for the full annotated variable list and
 
 ## Documentation
 
-- [docs/local-development.md](docs/local-development.md) — detailed local dev flow.
+- **[docs/frontend-guide.md](docs/frontend-guide.md) — start here to build the
+  frontend.** The connecting model: how to stitch REST, WebSocket, auth, and the
+  12-stage machine together, with end-to-end play scenarios. It links out to the
+  references below rather than duplicating them.
+- [docs/realtime-events.md](docs/realtime-events.md) — the detailed WebSocket
+  event catalog (names, directions, audiences, payloads).
 - [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md) — schema,
   migrations, and the seed flow.
+- [docs/local-development.md](docs/local-development.md) — detailed local dev flow.
 - [docs/minio.md](docs/minio.md) — MinIO console, bucket provisioning, and
   storage conventions.
-- [docs/realtime-events.md](docs/realtime-events.md) — WebSocket event contracts.
 - [docs/ci.md](docs/ci.md) — GitHub Actions pipeline (quality gate, E2E, optional
   Docker job).
 
@@ -245,6 +252,8 @@ of participants — not a hardened production service.
   (schema/migrations/seeds), lobby and team setup, game board and battle cycle,
   scoring, shop & QR tools, presentation upload, defense, evaluation, and final
   results — a full game from lobby to finished.
-- **Stage 11 — internal documentation & cleanup.** *In progress.* Bringing the
-  README and `docs/` in line with the implemented backbone (this change).
+- **Stage 11 — documentation.** *Done.* Internal documentation (README and
+  `docs/` brought in line with the implemented backbone), Swagger finalization
+  (error envelope, file-picker, per-endpoint 4xx statuses), and a frontend
+  integration guide ([docs/frontend-guide.md](docs/frontend-guide.md)).
 - **Stage 12 — testing & hardening.** *Next.*

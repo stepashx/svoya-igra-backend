@@ -182,7 +182,7 @@ See _Gameplay contract notes_ below for the secrecy and timer constraints.
 
 | Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
 |---|---|---|---|---|---|---|
-| `server:gameplay:board-state-updated` | server | gameplay | room | Coarse snapshot of the board (6×5, categories, point values, taken cells) | §16.4 | Emitted since 6.2a by OpenQuestion / RejectSelection / ReviewAnswer (board snapshot after a move); payload `{ roomId, cells: BoardCell[] }` |
+| `server:gameplay:board-state-updated` | server | gameplay | room | Coarse snapshot of the board (6×5, categories, point values, taken cells) | §16.4 | Emitted since 6.2a by RejectSelection / ReviewAnswer (board snapshot after a move); payload `{ roomId, cells: BoardCell[] }` |
 | `server:gameplay:cell-selected` | server | gameplay | room | Captain's cell pick (room-wide pending highlight) | §16.4 | **Superseded** by cell-selection-requested — name reserved, no constant defined, NEVER emitted |
 | `server:gameplay:cell-selection-requested` | server | gameplay | host | Active-team captain requested a cell; host is prompted to approve/reject | §16.4 | Emitted since 6.2b by SelectQuestionUseCase (captain `POST board/select`), host audience via `HostRealtimeEventsPort`; payload `{ roomId, cell: BoardCell }` |
 | `server:gameplay:cell-selection-approved` | server | gameplay | room | Host approved → transition GAME_BOARD → QUESTION_OPENED | §16.4 | Emitted since 6.2a by OpenQuestionUseCase (host `POST questions/open`); payload `{ roomId, cell: BoardCell }` |
