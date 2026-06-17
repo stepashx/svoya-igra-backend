@@ -14,6 +14,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { ApiErrorResponses } from '../../../common/http/api-error-responses.decorator';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import { BoardQueryService } from '../../../gameplay/application/queries';
 import { LobbyQueryService } from '../../application/queries';
@@ -77,6 +78,7 @@ export class QuestionsController {
   @Get('current')
   @ApiOperation({ summary: 'Get the current question (room view, no answer)' })
   @ApiOkResponse({ type: RoomQuestionResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getCurrent(
     @Param('code') code: string,
   ): Promise<RoomQuestionResponseDto | null> {
@@ -92,6 +94,12 @@ export class QuestionsController {
     summary: 'Get the current question (host view, with answer)',
   })
   @ApiOkResponse({ type: HostQuestionResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async getCurrentForHost(
     @CurrentHost() host: HostContext,
   ): Promise<HostQuestionResponseDto | null> {
@@ -104,6 +112,12 @@ export class QuestionsController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Get the current question answer (host only)' })
   @ApiOkResponse({ type: CurrentAnswerResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async getCurrentAnswer(
     @CurrentHost() host: HostContext,
   ): Promise<CurrentAnswerResponseDto> {
@@ -114,6 +128,7 @@ export class QuestionsController {
   @Get()
   @ApiOperation({ summary: 'List the questions (room view, no answer)' })
   @ApiOkResponse({ type: [RoomQuestionResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async list(): Promise<RoomQuestionResponseDto[]> {
     const questions = await this.boardQuery.listQuestions();
     return questions.map(toRoomQuestionResponse);
@@ -125,6 +140,12 @@ export class QuestionsController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Open the selected question (host)' })
   @ApiOkResponse({ type: OpenQuestionResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async open(
     @CurrentHost() host: HostContext,
     @Body() dto: CellRefRequestDto,
@@ -145,6 +166,12 @@ export class QuestionsController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Reject the selected cell (host)' })
   @ApiOkResponse({ type: CellResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async reject(
     @CurrentHost() host: HostContext,
     @Body() dto: CellRefRequestDto,
@@ -162,6 +189,13 @@ export class QuestionsController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Submit an answer (active team captain)' })
   @ApiOkResponse({ type: SubmitAnswerResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async answer(
     @CurrentPlayer() player: Player,
     @Body() dto: SubmitAnswerRequestDto,
@@ -183,6 +217,12 @@ export class QuestionsController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Review the submitted answer (host)' })
   @ApiOkResponse({ type: BoardResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async review(
     @CurrentHost() host: HostContext,
     @Body() dto: ReviewAnswerRequestDto,

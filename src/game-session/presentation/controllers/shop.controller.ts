@@ -14,6 +14,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { ApiErrorResponses } from '../../../common/http/api-error-responses.decorator';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import { ShopQueryService } from '../../../commerce/application/queries';
 import {
@@ -78,6 +79,7 @@ export class ShopController {
   @Get('items')
   @ApiOperation({ summary: 'List the shop catalog with availability' })
   @ApiOkResponse({ type: [ShopItemResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async listItems(@Param('code') code: string): Promise<ShopItemResponseDto[]> {
     const room = await this.lobby.getRoom(code);
     const catalog = await this.shopQuery.listCatalog(room.id);
@@ -90,6 +92,13 @@ export class ShopController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Purchase a shop item (team captain only)' })
   @ApiOkResponse({ type: PurchaseResultResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async purchase(
     @CurrentPlayer() player: Player,
     @Body() body: PurchaseItemRequestDto,
@@ -105,6 +114,7 @@ export class ShopController {
   @Get('round')
   @ApiOperation({ summary: 'Get the current shop round' })
   @ApiOkResponse({ type: ShopRoundResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getRound(@Param('code') code: string): Promise<ShopRoundResponseDto> {
     const room = await this.lobby.getRoom(code);
     const timer = await this.timers.readShop(code);
@@ -117,6 +127,12 @@ export class ShopController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Close the shop (host only)' })
   @ApiOkResponse({ type: StageResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async close(@CurrentHost() host: HostContext): Promise<StageResponseDto> {
     const result = await this.closeShop.execute({ roomId: host.roomId });
     return { currentStage: result.stage };
@@ -125,6 +141,7 @@ export class ShopController {
   @Get('purchases')
   @ApiOperation({ summary: "List the room's purchases" })
   @ApiOkResponse({ type: [PurchaseResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async listPurchases(
     @Param('code') code: string,
   ): Promise<PurchaseResponseDto[]> {

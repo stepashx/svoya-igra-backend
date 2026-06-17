@@ -14,6 +14,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { ApiErrorResponses } from '../../../common/http/api-error-responses.decorator';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import {
   EvaluationQueryService,
@@ -95,6 +96,7 @@ export class EvaluationController {
   @Get('criteria')
   @ApiOperation({ summary: 'List the evaluation criteria (public)' })
   @ApiOkResponse({ type: [CriterionResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async listCriteria(): Promise<CriterionResponseDto[]> {
     const criteria = await this.evaluationQuery.listCriteria();
     return criteria.map(toCriterionResponse);
@@ -103,6 +105,7 @@ export class EvaluationController {
   @Get('teams')
   @ApiOperation({ summary: 'List the teams to evaluate (public)' })
   @ApiOkResponse({ type: [EvaluationTargetResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async listTeams(
     @Param('code') code: string,
   ): Promise<EvaluationTargetResponseDto[]> {
@@ -115,6 +118,7 @@ export class EvaluationController {
     summary: 'Get the evaluation progress (counts only, public)',
   })
   @ApiOkResponse({ type: ProgressResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getProgress(@Param('code') code: string): Promise<ProgressResponseDto> {
     const room = await this.lobby.getRoom(code);
     const teams = await this.lobby.listTeams(code);
@@ -132,6 +136,13 @@ export class EvaluationController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Submit an evaluation (team captain only)' })
   @ApiOkResponse({ type: SubmitEvaluationResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async submitTeam(
     @CurrentPlayer() player: Player,
     @Body() body: SubmitEvaluationRequestDto,
@@ -153,6 +164,12 @@ export class EvaluationController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Submit an evaluation (host only)' })
   @ApiOkResponse({ type: SubmitEvaluationResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async submitHost(
     @CurrentHost() host: HostContext,
     @Body() body: SubmitEvaluationRequestDto,
@@ -174,6 +191,13 @@ export class EvaluationController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Confirm evaluation(s) (team captain only)' })
   @ApiOkResponse({ type: ConfirmEvaluationResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async confirmTeam(
     @CurrentPlayer() player: Player,
     @Body() body: ConfirmEvaluationRequestDto,
@@ -193,6 +217,12 @@ export class EvaluationController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Confirm evaluation(s) (host only)' })
   @ApiOkResponse({ type: ConfirmEvaluationResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async confirmHost(
     @CurrentHost() host: HostContext,
     @Body() body: ConfirmEvaluationRequestDto,
@@ -214,6 +244,12 @@ export class EvaluationController {
     summary: 'Calculate the final results and finish the game (host only)',
   })
   @ApiOkResponse({ type: ResultsResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async calculate(
     @CurrentHost() host: HostContext,
     @Body() body: CalculateResultsRequestDto,
@@ -228,6 +264,7 @@ export class EvaluationController {
   @Get('results')
   @ApiOperation({ summary: 'Get the final leaderboard (public)' })
   @ApiOkResponse({ type: ResultsResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getResults(@Param('code') code: string): Promise<ResultsResponseDto> {
     const room = await this.lobby.getRoom(code);
     const teams = await this.lobby.listTeams(code);

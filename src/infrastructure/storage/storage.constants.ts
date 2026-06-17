@@ -3,7 +3,7 @@ export const STORAGE_CLIENT = Symbol('STORAGE_CLIENT');
 
 /**
  * Top-level key prefixes for the two file-owning areas. Object bytes live in
- * MinIO; PostgreSQL stores only metadata (Stage 5A onward).
+ * MinIO; PostgreSQL stores only metadata.
  *
  * - QR tools are global/static seeded assets, so their keys carry no roomId:
  *     `qr-tools/<qrToolId>.svg`

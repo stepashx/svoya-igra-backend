@@ -22,7 +22,9 @@ the environment variables, the two run modes, and cleanup.
 The backend starts only after `postgres` and `minio` report healthy
 (`depends_on: condition: service_healthy`). Its own health check is a
 **liveness** probe — any HTTP response counts as alive — so the container shows
-healthy even while `/api/health` reports `storage` degraded (missing bucket).
+healthy even while `/api/health` reports `storage` degraded, which it does until
+`npm run db:seed` provisions the bucket (see
+[migrations-and-seeds.md](migrations-and-seeds.md)).
 
 Data survives `docker compose down`; it is removed only by
 `docker compose down -v` (`npm run docker:reset:volumes`).
@@ -56,10 +58,18 @@ a dated `RELEASE.*` tag for reproducible local builds.
 
 ```bash
 cp .env.example .env
-npm run docker:up      # docker compose up --build -d
+npm run docker:up      # docker compose up --build -d (backend + postgres + minio)
+npm install            # host tooling for the data-layer scripts
+npm run db:migrate     # apply the schema (host → localhost)
+npm run db:seed        # seed catalogs + provision the MinIO bucket (host → localhost)
 docker compose ps      # postgres & minio should be (healthy)
 npm run docker:logs    # follow logs (Ctrl-C to stop following)
 ```
+
+`db:migrate` / `db:seed` run **on the host** against the Compose-published
+`localhost` ports — they cannot run inside the backend container, whose image
+ships production dependencies only (no `drizzle-kit` / `ts-node`). See
+[migrations-and-seeds.md](migrations-and-seeds.md).
 
 ## Run mode B — backend on host, infra in Docker
 
@@ -69,16 +79,20 @@ Best for iterating on backend code with reload:
 cp .env.example .env
 docker compose up -d postgres minio
 npm install
+npm run db:migrate     # apply the schema
+npm run db:seed        # seed catalogs + provision the MinIO bucket
 npm run start:dev
 ```
 
 The host `.env` already targets `localhost`, so no overrides are needed.
+`db:migrate` / `db:seed` are one-time per fresh stack (and idempotent to re-run);
+see [migrations-and-seeds.md](migrations-and-seeds.md).
 
 ## Verify
 
 - Swagger: http://localhost:3000/docs
 - Health: `curl -s http://localhost:3000/api/health` (200 = all reachable; 503 =
-  a dependency is down or the MinIO bucket is missing — see
+  a dependency is down or — before `db:seed` — the MinIO bucket is missing; see
   [minio.md](minio.md)).
 - MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`).
 - Service health: `docker compose ps`.
@@ -91,11 +105,16 @@ npm run docker:reset:volumes   # also delete pgdata + miniodata (DESTRUCTIVE)
 docker compose build backend   # rebuild image after dependency changes
 ```
 
-## Not here yet
+## What runs where
 
-- **Migrations / seeds** — Stage 5A. See
-  [migrations-and-seeds.md](migrations-and-seeds.md). No `db:*` scripts exist.
-- **GitHub Actions** — see [`ci.yml`](../.github/workflows/ci.yml) and
-  [ci.md](ci.md). Runs typecheck → lint → build → test (no deploy).
-- **Game features / endpoints / WebSocket events** — later feature stages. Only
-  the Health endpoint and the transport-level WebSocket gateway exist today.
+- **Schema & seeds** — `npm run db:migrate` then `npm run db:seed`, run on the
+  host (the data-layer tooling is dev-only and absent from the backend image).
+  See [migrations-and-seeds.md](migrations-and-seeds.md).
+- **CI** — see [`ci.yml`](../.github/workflows/ci.yml) and [ci.md](ci.md):
+  quality gate (typecheck → lint → build → test → schema-drift) plus a REST
+  end-to-end job against live PostgreSQL + MinIO.
+- **REST & WebSocket** — the game backbone is implemented (lobby → finished).
+  The REST surface is browsable at Swagger `/docs`; realtime event contracts are
+  in [realtime-events.md](realtime-events.md).
+- **Deployment** — not here: deferred until hosting is chosen (see
+  [README → Known limitations](../README.md#known-limitations)).

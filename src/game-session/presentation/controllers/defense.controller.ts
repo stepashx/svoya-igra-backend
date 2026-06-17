@@ -13,6 +13,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { ApiErrorResponses } from '../../../common/http/api-error-responses.decorator';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import { LobbyQueryService } from '../../application/queries';
 import {
@@ -66,6 +67,12 @@ export class DefenseController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Start the presentation defenses (host only)' })
   @ApiOkResponse({ type: DefenseStateResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async start(
     @CurrentHost() host: HostContext,
   ): Promise<DefenseStateResponseDto> {
@@ -80,6 +87,12 @@ export class DefenseController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Finish the current presenter (host only)' })
   @ApiOkResponse({ type: DefenseAdvanceResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async finish(
     @CurrentHost() host: HostContext,
   ): Promise<DefenseAdvanceResponseDto> {
@@ -94,6 +107,12 @@ export class DefenseController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Skip the current presenter (host only)' })
   @ApiOkResponse({ type: DefenseAdvanceResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async skip(
     @CurrentHost() host: HostContext,
   ): Promise<DefenseAdvanceResponseDto> {
@@ -105,6 +124,7 @@ export class DefenseController {
   @Get('state')
   @ApiOperation({ summary: 'Get the current defense state' })
   @ApiOkResponse({ type: DefenseStateResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getState(
     @Param('code') code: string,
   ): Promise<DefenseStateResponseDto> {

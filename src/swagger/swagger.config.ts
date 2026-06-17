@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
+import { ApiErrorResponseDto } from '../common/http/api-error-response';
 import { SWAGGER_TAGS } from './swagger.tags';
 
 export interface SwaggerOptions {
@@ -51,6 +52,11 @@ export function setupSwagger(
   options: SwaggerOptions,
 ): void {
   const config = buildSwaggerDocumentConfig(options);
-  const document = SwaggerModule.createDocument(app, config);
+  // Register the shared error envelope so the per-route `@ApiErrorResponses`
+  // `$ref`s resolve. `ApiErrorBodyDto` is pulled in transitively via the
+  // `error` property's `@ApiProperty({ type: ApiErrorBodyDto })`.
+  const document = SwaggerModule.createDocument(app, config, {
+    extraModels: [ApiErrorResponseDto],
+  });
   SwaggerModule.setup(path, app, document);
 }

@@ -18,6 +18,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { ApiErrorResponses } from '../../../common/http/api-error-responses.decorator';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import { LobbyQueryService } from '../../application/queries';
 import {
@@ -67,6 +68,13 @@ export class TeamsController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Create a team' })
   @ApiCreatedResponse({ type: TeamResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async create(
     @CurrentPlayer() player: Player,
     @Body() dto: CreateTeamRequestDto,
@@ -82,6 +90,7 @@ export class TeamsController {
   @Get()
   @ApiOperation({ summary: 'List teams in the room' })
   @ApiOkResponse({ type: [TeamResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async list(@Param('code') code: string): Promise<TeamResponseDto[]> {
     const teams = await this.lobby.listTeams(code);
     return teams.map(toTeamResponse);
@@ -90,6 +99,7 @@ export class TeamsController {
   @Get(':teamId')
   @ApiOperation({ summary: 'Get a team with its members' })
   @ApiOkResponse({ type: TeamWithMembersResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getById(
     @Param('code') code: string,
     @Param('teamId', ParseUUIDPipe) teamId: string,
@@ -103,6 +113,13 @@ export class TeamsController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Join a team' })
   @ApiCreatedResponse({ type: PlayerResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async addMember(
     @CurrentPlayer() player: Player,
     @Param('teamId', ParseUUIDPipe) teamId: string,
@@ -121,6 +138,13 @@ export class TeamsController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Leave a team' })
   @ApiOkResponse({ type: PlayerResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async removeMember(
     @CurrentPlayer() player: Player,
     @Param('teamId', ParseUUIDPipe) teamId: string,
@@ -138,6 +162,13 @@ export class TeamsController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Select the team topic' })
   @ApiOkResponse({ type: TeamResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async selectTeamTopic(
     @CurrentPlayer() player: Player,
     @Param('teamId', ParseUUIDPipe) teamId: string,
@@ -157,6 +188,13 @@ export class TeamsController {
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Set the team readiness' })
   @ApiOkResponse({ type: TeamResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async setReady(
     @CurrentPlayer() player: Player,
     @Param('teamId', ParseUUIDPipe) teamId: string,
@@ -174,6 +212,7 @@ export class TeamsController {
   @Get(':teamId/captain')
   @ApiOperation({ summary: 'Get the team captain' })
   @ApiOkResponse({ type: PlayerResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getCaptain(
     @Param('code') code: string,
     @Param('teamId', ParseUUIDPipe) teamId: string,

@@ -1,10 +1,11 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Param, UseGuards } from '@nestjs/common';
 import {
   ApiHeader,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { ApiErrorResponses } from '../../../common/http/api-error-responses.decorator';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import { InventoryQueryService } from '../../../commerce/application/queries';
 import { LobbyQueryService } from '../../application/queries';
@@ -44,6 +45,12 @@ export class InventoryController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: false })
   @ApiOperation({ summary: "Get a team's inventory (team members or host)" })
   @ApiOkResponse({ type: [InventoryItemResponseDto] })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+  )
   async getTeamInventory(
     @Param('code') code: string,
     @Param('teamId') teamId: string,
@@ -62,6 +69,12 @@ export class InventoryController {
       "Get the QR tools behind a team's inventory (team members or host)",
   })
   @ApiOkResponse({ type: [QrToolResponseDto] })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+  )
   async getTeamQrTools(
     @Param('code') code: string,
     @Param('teamId') teamId: string,

@@ -2,7 +2,8 @@
 
 MinIO is the S3-compatible object store. **PostgreSQL stores only file metadata;
 MinIO stores the bytes.** For the MVP the bucket is public and files are served
-via plain public URLs — no signed URLs, no private buckets, no CDN.
+via plain public URLs — no signed URLs, no private buckets, no CDN (see
+[Known limitations](#known-limitations)).
 
 ## Local access
 
@@ -19,16 +20,22 @@ The MinIO container's root credentials are set from `MINIO_ACCESS_KEY` /
 console. These are **local-development defaults** — change them everywhere
 before any shared environment.
 
-## The bucket is not created automatically
+## The bucket is provisioned by the seed
 
-The storage health probe is **read-only**: it checks that the configured bucket
-exists and never creates it. On a fresh stack the bucket is missing, so
-`GET /api/health` reports `storage: error` (bucket does not exist). This is the
-expected Stage 3D state.
+`npm run db:seed` provisions MinIO: it creates the `svoya-igra` bucket if it is
+absent, applies the anonymous public-read policy, and uploads one placeholder QR
+`.svg` per `qr_tool`. The write side lives in
+`src/infrastructure/database/seeds/bucket-provisioning.ts` and is idempotent —
+re-running the seed never re-creates the bucket or duplicates objects. See
+[migrations-and-seeds.md](migrations-and-seeds.md).
 
-Automatic bucket creation and the QR `.svg` placement procedure are **Stage 5A**
-(see [migrations-and-seeds.md](migrations-and-seeds.md)). To create the bucket
-now and turn storage green, either:
+The runtime storage health probe is **read-only**: it checks that the configured
+bucket exists and never creates it. So on a fresh stack — before the seed has
+run — `GET /api/health` reports `storage: error` (bucket does not exist); after
+`db:seed`, storage turns green.
+
+If you want to create the bucket **without** running the full seed (e.g. to turn
+storage green before catalogs exist), do it manually instead:
 
 **Option A — MinIO console:** open http://localhost:9001, log in, and create a
 bucket named `svoya-igra`.
@@ -45,19 +52,21 @@ docker run --rm --network svoya-igra-backend_svoya-igra --entrypoint sh \
 `mc anonymous set download` makes objects publicly readable, matching the
 public-bucket model the frontend relies on. (The Compose network is named
 `<project>_svoya-igra`; the project name defaults to the repo folder
-`svoya-igra-backend`. Adjust if you renamed the folder.)
+`svoya-igra-backend`. Adjust if you renamed the folder.) Note this only creates
+an empty bucket — you still need `db:seed` to upload the QR assets and load the
+catalogs.
 
 ## Storage key & public URL conventions
 
 These are defined in `src/infrastructure/storage/storage-key.helper.ts` and used
-by the storage seam. No objects are written yet — the conventions are in place
-for later stages:
+across the storage seam:
 
 - **QR tools** are global/static assets, so keys carry no room id:
-  `qr-tools/<qrToolId>.svg`. Seeded and placed in MinIO during **Stage 5A**.
+  `qr-tools/<qrToolId>.svg`. Written by `db:seed` (placeholder SVGs, one per QR
+  tool).
 - **Presentation uploads** are room/team-scoped runtime files:
-  `rooms/<roomId>/presentations/<teamId>/<submissionId>.<ext>`. Implemented in
-  the Presentation feature stage.
+  `rooms/<roomId>/presentations/<teamId>/<submissionId>.<ext>`. Written when a
+  team captain uploads a presentation during the Presentation stage.
 
 Public URLs are built from `MINIO_PUBLIC_URL` + bucket + key (path-style by
 default, `MINIO_PATH_STYLE=true`). `MINIO_PUBLIC_URL` is always a browser-facing
@@ -66,3 +75,17 @@ host URL — it is **not** rewritten to the `minio` service name inside Compose.
 > **Port coupling:** `MINIO_PUBLIC_URL` hardcodes the S3 API port (`9000`). It is
 > independent of `MINIO_PORT`, so if you change `MINIO_PORT` you must update the
 > port in `MINIO_PUBLIC_URL` by hand to keep public links resolvable.
+
+## Known limitations
+
+- **The bucket is public-read by design (MVP).** Files (QR assets, uploaded
+  presentations) are served via plain anonymous public URLs. Signed URLs,
+  private buckets, a CDN, and serving uploads from a separate origin are all
+  **post-MVP** — fine for a single demo game, not for an untrusted public
+  deployment.
+- **Stored-XSS is already mitigated**, so the public bucket is not an open
+  hole: uploaded presentations are written with a server-canonical `Content-Type`
+  derived from the file extension (never the client-supplied MIME) plus
+  `Content-Disposition: attachment`, so a mislabelled HTML payload downloads
+  rather than executing when its public URL is opened (see
+  `src/infrastructure/storage/storage.service.ts`).

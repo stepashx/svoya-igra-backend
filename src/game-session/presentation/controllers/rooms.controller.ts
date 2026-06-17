@@ -14,6 +14,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { ApiErrorResponses } from '../../../common/http/api-error-responses.decorator';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import { LobbyQueryService } from '../../application/queries';
 import {
@@ -61,6 +62,7 @@ export class RoomsController {
   @Get(':code')
   @ApiOperation({ summary: 'Get a room by code' })
   @ApiOkResponse({ type: RoomResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getByCode(@Param('code') code: string): Promise<RoomResponseDto> {
     return toRoomResponse(await this.lobby.getRoom(code));
   }
@@ -68,6 +70,7 @@ export class RoomsController {
   @Get(':code/state')
   @ApiOperation({ summary: 'Get the full room state' })
   @ApiOkResponse({ type: RoomStateResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getState(@Param('code') code: string): Promise<RoomStateResponseDto> {
     return toRoomStateResponse(await this.lobby.getRoomState(code));
   }
@@ -75,6 +78,7 @@ export class RoomsController {
   @Get(':code/status')
   @ApiOperation({ summary: 'Get the room status' })
   @ApiOkResponse({ type: RoomStatusResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getStatus(@Param('code') code: string): Promise<RoomStatusResponseDto> {
     return toRoomStatusResponse(await this.lobby.getRoom(code));
   }
@@ -85,6 +89,12 @@ export class RoomsController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Reconnect the host' })
   @ApiOkResponse({ type: RoomStateResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async reconnectHost(
     @CurrentHost() host: HostContext,
   ): Promise<RoomStateResponseDto> {
@@ -102,6 +112,12 @@ export class RoomsController {
   @ApiHeader({ name: HOST_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Close the room' })
   @ApiOkResponse({ type: RoomResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async close(@CurrentHost() host: HostContext): Promise<RoomResponseDto> {
     return toRoomResponse(
       await this.closeRoom.execute({ roomId: host.roomId }),

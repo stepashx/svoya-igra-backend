@@ -13,12 +13,14 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  ApiBody,
   ApiConsumes,
   ApiHeader,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { ApiErrorResponses } from '../../../common/http/api-error-responses.decorator';
 import { SwaggerTag } from '../../../swagger/swagger.tags';
 import { PresentationQueryService } from '../../../presentation/application/queries';
 import {
@@ -91,6 +93,7 @@ export class PresentationController {
     summary: 'List the presentation requirements (global catalog)',
   })
   @ApiOkResponse({ type: [PresentationRequirementResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async listRequirements(
     @Param('code') code: string,
   ): Promise<PresentationRequirementResponseDto[]> {
@@ -104,6 +107,7 @@ export class PresentationController {
   @Get('deadline')
   @ApiOperation({ summary: 'Get the preparation deadline / endsAt' })
   @ApiOkResponse({ type: PresentationDeadlineResponseDto })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getDeadline(
     @Param('code') code: string,
   ): Promise<PresentationDeadlineResponseDto> {
@@ -121,6 +125,12 @@ export class PresentationController {
     summary: 'Start the presentation preparation timer (host only)',
   })
   @ApiOkResponse({ type: PresentationDeadlineResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+  )
   async startPreparation(
     @CurrentHost() host: HostContext,
   ): Promise<PresentationDeadlineResponseDto> {
@@ -133,6 +143,7 @@ export class PresentationController {
   @Get('submissions')
   @ApiOperation({ summary: "Get the teams' upload status" })
   @ApiOkResponse({ type: [PresentationSubmissionStatusResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getSubmissions(
     @Param('code') code: string,
   ): Promise<PresentationSubmissionStatusResponseDto[]> {
@@ -148,7 +159,30 @@ export class PresentationController {
   @ApiConsumes('multipart/form-data')
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Upload a presentation file (team captain only)' })
+  @ApiBody({
+    required: true,
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description:
+            'Presentation file. Allowed extensions from GET …/presentation/requirements; over-size→413, unsupported/missing→400.',
+        },
+      },
+    },
+  })
   @ApiOkResponse({ type: PresentationUploadResultResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+    HttpStatus.PAYLOAD_TOO_LARGE,
+  )
   async upload(
     @CurrentPlayer() player: Player,
     @UploadedFile(
@@ -170,7 +204,30 @@ export class PresentationController {
   @ApiConsumes('multipart/form-data')
   @ApiHeader({ name: PLAYER_TOKEN_HEADER, required: true })
   @ApiOperation({ summary: 'Replace a presentation file (team captain only)' })
+  @ApiBody({
+    required: true,
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description:
+            'Presentation file. Allowed extensions from GET …/presentation/requirements; over-size→413, unsupported/missing→400.',
+        },
+      },
+    },
+  })
   @ApiOkResponse({ type: PresentationUploadResultResponseDto })
+  @ApiErrorResponses(
+    HttpStatus.BAD_REQUEST,
+    HttpStatus.UNAUTHORIZED,
+    HttpStatus.FORBIDDEN,
+    HttpStatus.NOT_FOUND,
+    HttpStatus.CONFLICT,
+    HttpStatus.PAYLOAD_TOO_LARGE,
+  )
   async replace(
     @CurrentPlayer() player: Player,
     @UploadedFile(
@@ -188,6 +245,7 @@ export class PresentationController {
   @Get('files')
   @ApiOperation({ summary: 'List the presentation files (public links)' })
   @ApiOkResponse({ type: [PresentationFileResponseDto] })
+  @ApiErrorResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND)
   async getFiles(
     @Param('code') code: string,
   ): Promise<PresentationFileResponseDto[]> {

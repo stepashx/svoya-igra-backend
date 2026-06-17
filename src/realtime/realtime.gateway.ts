@@ -32,9 +32,9 @@ export class RealtimeGateway
   private readonly server!: Server;
 
   handleConnection(client: Socket): void {
-    // Reconnect seam (Stage 5B): a reconnect token may arrive via handshake
-    // auth/query and will later be passed to the ReconnectClient use case. No
-    // validation, DB access, or state restoration happens at the transport layer.
+    // Base gateway is transport-only: it just reads any reconnect token off the
+    // handshake (no validation, DB access, or state restoration here). Identity,
+    // reconnect and the room snapshot are handled by the GameSessionGateway.
     void this.readReconnectToken(client);
     this.logger.debug(`Socket connected: ${client.id}`);
   }
@@ -77,7 +77,11 @@ export class RealtimeGateway
     this.server.to(clientId).emit(event, payload);
   }
 
-  /** Read a reconnect token from the handshake. Placeholder — see Stage 5B. */
+  /**
+   * Read a reconnect token from the handshake (base-gateway reader). The active
+   * reconnect path uses the GameSessionGateway's copy in
+   * `presentation/ws/handshake.ts`.
+   */
   private readReconnectToken(client: Socket): string | undefined {
     const fromAuth = (client.handshake.auth as { reconnectToken?: unknown })
       ?.reconnectToken;

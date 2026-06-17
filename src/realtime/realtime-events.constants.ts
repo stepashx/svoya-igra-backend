@@ -1,5 +1,6 @@
 /**
- * Realtime event-naming convention (transport seam only — no game events).
+ * Realtime event-naming convention (transport naming only — concrete feature
+ * events live in the area catalogs, §16.x; see docs/realtime-events.md).
  *
  * Names are direction-aware and area-scoped:
  *   - server->client broadcasts: `server:<area>:<event>`
@@ -36,8 +37,8 @@ export function realtimeEventName(
 
 /**
  * The only transport-level command the base gateway understands: a socket asks
- * to join a room group. Business room membership is validated later (Stage 5B);
- * this is pure socket grouping.
+ * to join a room group. This is pure socket grouping — business room membership
+ * comes from the REST identity (the reconnect token), not from this command.
  */
 export const REALTIME_JOIN_ROOM = realtimeEventName(
   'client',
