@@ -97,6 +97,51 @@ see [migrations-and-seeds.md](migrations-and-seeds.md).
 - MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`).
 - Service health: `docker compose ps`.
 
+## Compose bring-up — verified
+
+Run mode A above was exercised end to end on `feature/stage-12` (2026-06-17,
+Docker 27.4 / Compose v2.31, Docker Desktop on macOS). What was confirmed:
+
+1. **`docker compose config` is valid** (exit 0). The backend overrides render as
+   intended — `DATABASE_URL=…@postgres:5432`, `MINIO_ENDPOINT=minio`,
+   `NODE_ENV=production` — while `MINIO_PUBLIC_URL` stays the host URL.
+2. **`docker compose up -d --build` brings the stack up in dependency order.**
+   `postgres` and `minio` start and become `(healthy)` first, then — gated by
+   `depends_on: condition: service_healthy` — `backend` starts. All three report
+   `(healthy)` in `docker compose ps`.
+3. **The backend boots and serves.** Logs show `Nest application successfully
+   started` / `Backend listening on port 3000 (prefix: /api)`, the full REST
+   surface mapped (69 routes), and the Socket.IO gateway subscribed to
+   `client:realtime:join-room` / `leave-room`. The engine.io handshake at
+   `/socket.io/` returns a session id, so the WebSocket transport is live on the
+   published port (see [ws-testing.md](ws-testing.md) for the realtime checklist).
+4. **Schema + seeds are applied from the host** (the image ships production deps
+   only — no `drizzle-kit` / `ts-node`): `npm run db:migrate` then
+   `npm run db:seed` against the Compose-published `localhost` ports. The seed
+   provisioned the MinIO bucket, uploaded the placeholder QR SVGs, and upserted
+   the catalogs — idempotent on re-run.
+5. **The running stack answers.** `GET /api/health` → `200`
+   (`database` + `storage` both `ok`); `GET /api/topics` returns the four seeded
+   topics (the container reads the seeded DB end-to-end).
+6. **`docker compose down` tears it down cleanly** — containers and the network
+   are removed; the `pgdata` / `miniodata` volumes persist (use
+   `npm run docker:reset:volumes` to wipe them).
+
+**Working order / nuances:**
+
+- **Migrate and seed run on the host, not in the container** (step 4). The image
+  has no data-layer tooling, so it never migrates or seeds itself. On a *fresh*
+  stack (after `docker compose down -v`), `GET /api/health` reports
+  `storage: error` until `db:seed` provisions the bucket (see [minio.md](minio.md));
+  the named volumes keep the data across an ordinary `down`, so a later re-up is
+  green immediately without re-seeding.
+- **A fresh `--build` needs registry access** to pull the `node:22-alpine` base
+  image; CI's `docker build` job exercises this (see [ci.md](ci.md)). If a build
+  aborts on the base-image pull (a transient registry/network error), retry the
+  pull — `docker pull node:22-alpine` — and re-run `docker compose up -d --build`.
+  An already-built `svoya-igra-backend-backend` image is reused without
+  rebuilding (`docker compose up -d` without `--build`).
+
 ## Stop & clean up
 
 ```bash
@@ -115,6 +160,7 @@ docker compose build backend   # rebuild image after dependency changes
   end-to-end job against live PostgreSQL + MinIO.
 - **REST & WebSocket** — the game backbone is implemented (lobby → finished).
   The REST surface is browsable at Swagger `/docs`; realtime event contracts are
-  in [realtime-events.md](realtime-events.md).
+  in [realtime-events.md](realtime-events.md), and a by-hand WebSocket test
+  checklist is in [ws-testing.md](ws-testing.md).
 - **Deployment** — not here: deferred until hosting is chosen (see
   [README → Known limitations](../README.md#known-limitations)).
