@@ -377,11 +377,18 @@ describe('CalculateResultsUseCase', () => {
     expect(byTeam(finalResultRepo).has('team-ghost')).toBe(false);
   });
 
-  it('⚠️V2 ranks a captainless participant but excludes it from teamCount', async () => {
+  it('⚠️V2 teamCount tracks participants (non-null turnOrder), the voting projection', async () => {
+    // Stage 12 liveness fix: the completeness gate's N counts PARTICIPANTS (the
+    // teams that vote / get voted on — the listTeamsToEvaluate projection), not
+    // captains. In the real flow a participant always has a captain (turnOrder
+    // is assigned only to ready teams at StartGame), so this synthetic
+    // captainless participant — unreachable in practice — is still counted as a
+    // participant. Previously teamCount filtered on captainPlayerId and this
+    // assertion read 2; it now reads 3 (all three participants).
     const captainless = makeTeam({
       id: 'team-c',
       turnOrder: 2, // presented → a participant
-      captainPlayerId: null, // never votes → not in teamCount
+      captainPlayerId: null,
       earnedScore: Score.create(10),
     });
     const { uc, finalResultRepo, evaluationQuery } = build({
@@ -391,10 +398,47 @@ describe('CalculateResultsUseCase', () => {
 
     await uc.execute({ roomId: 'room-1', force: true });
 
-    // The captainless team IS ranked (a participant)…
+    // The participant IS ranked…
     expect(byTeam(finalResultRepo).has('team-c')).toBe(true);
-    // …but teamCount counts only the two teams WITH a captain.
+    // …and teamCount counts all three participants (turnOrder !== null).
+    expect(progressSpy).toHaveBeenCalledWith('room-1', 3);
+  });
+
+  it('⚠️V2 a captained NON-participant (turnOrder null) does NOT block the gate — finishes without force', async () => {
+    // The audited liveness bug it fixes: a team WITH a captain that never
+    // presented (turnOrder null — not ready at StartGame, or created in
+    // EVALUATION). It never appears in listTeamsToEvaluate, so the voting flow
+    // can never cast its N² votes; counting it in teamCount made the gate
+    // unreachable (old N=3 → teamExpected 6 vs 2 confirmed), forcing the host to
+    // finish with force:true. teamCount now excludes it (turnOrder null), so a
+    // COMPLETE participant tally satisfies the gate on its own — no force.
+    const phantomCaptain = makeTeam({
+      id: 'team-ghost',
+      turnOrder: null, // never presented…
+      captainPlayerId: 'pc', // …but HAS a captain
+      earnedScore: Score.create(999),
+    });
+    const { uc, finalResultRepo, evaluationQuery, room } = build({
+      teams: [teamA(), teamB(), phantomCaptain],
+      scores: completeTwoTeamScores(), // complete tally for the TWO participants
+    });
+    const progressSpy = jest.spyOn(evaluationQuery, 'getProgress');
+
+    // No force — the gate must pass on the complete participant tally alone.
+    await expect(uc.execute({ roomId: 'room-1' })).resolves.toBeDefined();
+
+    // teamCount excludes the captained non-participant: N = 2 participants.
     expect(progressSpy).toHaveBeenCalledWith('room-1', 2);
+    // The phantom is NOT written to final_results (only the two participants)…
+    expect(finalResultRepo.create).toHaveBeenCalledTimes(2);
+    expect(byTeam(finalResultRepo).has('team-ghost')).toBe(false);
+    // …and the real teams' scores are unchanged (same as the happy path).
+    const map = byTeam(finalResultRepo);
+    expect(map.get('team-a')).toMatchObject({ finalScore: 800, place: 1 });
+    expect(map.get('team-b')).toMatchObject({ finalScore: 300, place: 2 });
+    // The game actually finished — without force.
+    expect(room.currentStage).toBe('RESULTS');
+    expect(room.status).toBe('FINISHED');
   });
 
   it('⚠️B the completeness gate blocks an incomplete tally (409, no mutation, no emit)', async () => {

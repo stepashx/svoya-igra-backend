@@ -107,8 +107,12 @@ export function aggregateRawScore(
  * 2. PARTICIPANTS = teams with a non-null `turnOrder` (the presenters — the same
  *    projection as start-defense / listTeamsToEvaluate). Teams that never
  *    presented are EXCLUDED so no phantom `final_results` row is written.
- * 3. teamCount = teams WITH a captain (a SEPARATE filter — the N for the N²
- *    completeness expectation; a captainless team never votes).
+ * 3. teamCount = the participant count (non-null turnOrder, the SAME projection
+ *    as step 2 and as listTeamsToEvaluate) — the N for the N² completeness
+ *    expectation. It tracks who actually votes / gets voted on, so a captained
+ *    team that never presented does not inflate the expectation past what the
+ *    voting flow can reach (the Stage 12 liveness fix; previously this counted
+ *    teams WITH a captain, which made the gate unreachable without force).
  * 4. COMPLETENESS GATE (before any mutation): if `progress.complete` is false and
  *    `force` is not true → {@link EvaluationNotCompleteError} (409). This turns a
  *    stray early POST into a recoverable 409 instead of an irreversible finish.
@@ -164,9 +168,18 @@ export class CalculateResultsUseCase {
       const roomTeams = await this.teams.findByRoomId(room.id);
       // ⚠️A — participants are the teams that PRESENTED (non-null turnOrder).
       const participants = roomTeams.filter((team) => team.turnOrder !== null);
-      // ⚠️V2 — teamCount is a SEPARATE filter: teams WITH a captain (the voters).
+      // ⚠️V2 (Stage 12 liveness fix) — teamCount is the N for the N²
+      // completeness expectation, so it MUST equal the set that actually
+      // votes / gets voted on: the participants (non-null turnOrder — the SAME
+      // projection as listTeamsToEvaluate). turnOrder is assigned only to ready
+      // teams at StartGame and a ready team always has a captain, so every
+      // participant's captain votes and the N² tally is reachable. Counting
+      // captains instead (captainPlayerId !== null) over-counted a captained
+      // team that never presented (not ready at start, or created in
+      // EVALUATION); that team can never be voted, so the gate became
+      // unreachable without force — an audited liveness bug, not a score bug.
       const teamCount = roomTeams.filter(
-        (team) => team.captainPlayerId !== null,
+        (team) => team.turnOrder !== null,
       ).length;
 
       const scores = await this.scores.findByRoomId(room.id);
