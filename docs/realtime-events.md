@@ -5,10 +5,12 @@ REST. The base gateway (`src/realtime/realtime.gateway.ts`) is **transport
 only** — it groups sockets by room and broadcasts events published through
 `RealtimeEventsPort`. It contains no business logic and validates no game state.
 
-This document is the single place where realtime events are listed. It is
-intentionally a **seam** right now: only the naming convention and the two
-transport-level commands exist. Concrete feature events are added with their
-stages (Game Session, Gameplay, Commerce, Presentation, Evaluation).
+This document is the single place where realtime events are listed. The full
+surface is **live**: events are really emitted across the eight feature areas
+below (§16.1–§16.8), each with its payload documented. The base gateway stays
+transport-only; socket identity, reconnect and the host/team audiences are
+layered on by the game-session gateway and the application use cases (see
+§5.2a / §5.2b and each area's Status column).
 
 ## Naming convention
 
@@ -42,22 +44,28 @@ group:
 | `client:realtime:join-room` | client → server | Join the socket to a room group. Transport grouping only — no membership validation. |
 | `client:realtime:leave-room` | client → server | Leave the room group. |
 
-## Reconnect (seam only)
+## Reconnect
 
 A reconnect token may be supplied on the handshake (`auth.reconnectToken` or
-query). The gateway reads it but does nothing with it yet — restoring host/player
-identity and the state snapshot is the `ReconnectClient` use case (Stage 5B).
+query). The `GameSessionGateway` resolves it — player first, then host — joins
+the socket to its room, runs the `ReconnectClient` use case, and returns
+`connection-restored` + the `room-state` snapshot to the originating socket. A
+missing/empty token leaves the socket anonymous (served by the base gateway
+only); a non-empty token that fails to resolve gets a single `error` then a
+forced disconnect. The full step-by-step is _Reconnect flow (handshake)_ under
+§5.2b.
 
 ## Feature events
 
-Game Session names (Lobby and Game start), the Gameplay catalog (§16.4), the
-Commerce catalog (§16.5) and the Presentation catalog (§16.6) are below. The
-Evaluation rows are filled in as that feature lands.
+The eight catalogs below cover the whole surface: Game Session common (§16.1),
+Lobby (§16.2), Game start (§16.3), Gameplay (§16.4), Commerce (§16.5),
+Presentation (§16.6), Defense (§16.7) and Evaluation (§16.8).
 
-**Name contract only.** This catalog fixes the canonical name, direction, area,
-and audience of each event. Payload schemas and the actual emission wiring are
-**Stage 5.2** — nothing here implies an implementation. Audience is a publishing
-concern (see the Audience section above), shown per row for reference.
+**Names, audiences and payloads.** Each catalog fixes the canonical name,
+direction, area and audience of every event. Payloads are documented too — the
+§16.1–§16.3 shapes under §5.2a / §5.2b, and the §16.4–§16.8 shapes inline in each
+area's Status column. Audience is a publishing concern (see the Audience section
+above), shown per row.
 
 ### Game Session — server broadcasts (§16.1 Common)
 
@@ -84,7 +92,7 @@ concern (see the Audience section above), shown per row for reference.
 | `server:game-session:team-updated` | server | game-session | room | Team attributes changed (name/captain/roster) | §16.2 |
 | `server:game-session:team-topic-selected` | server | game-session | room | Team selected a topic (teams.selectedTopicId, unique per room) | §16.2 |
 | `server:game-session:team-ready-changed` | server | game-session | room | teams.isReady toggled; at ≥ MIN_TEAMS_TO_START ready → stage READY_CHECK | §16.2 |
-| `server:game-session:game-can-start-changed` | server | game-session | host | "Host can start" flag: count of is_ready=true teams crosses MIN_TEAMS_TO_START | §16.2 |
+| `server:game-session:game-can-start-changed` | server | game-session | room | "Host can start" flag: count of is_ready=true teams crosses MIN_TEAMS_TO_START. Catalog target is host; currently emitted **room-wide** (`MarkTeamReadyUseCase.emitToRoom`), narrowing to the host audience deferred (§5.2b omissions) — non-host clients may ignore it | §16.2 |
 
 ### Game Session — server broadcasts (§16.3 Game start)
 
@@ -161,29 +169,33 @@ token — it refines the single plan `error` into transport vs. domain.
 
 ### Gameplay — server broadcasts (§16.4)
 
-Catalog of the §16.4 "board & questions" broadcasts. **Name contract only** —
-payload schemas and emission wiring are **Stage 6.2**; nothing here implies an
-implementation. The added **Status** column records each name's Stage-6
-disposition (active in 6.2, reserved, or superseded). Audience is a publishing
-concern (see the Audience section above), shown per row. See _Gameplay contract
-notes_ below for the secrecy and timer constraints fixed now.
+Catalog of the §16.4 "board & questions" broadcasts, emitted by the game-session
+battle use cases since sub-stage 6.2 (6.2a wired the room-wide rows; 6.2b the two
+host rows). The **Status** column records each name's disposition **and its
+payload**. Audience is a publishing concern (see the Audience section above),
+shown per row. Two shared projections appear in the payloads:
+
+- **BoardCell** = `{ id, categoryId, points, position, state, openedByTeamId, answeredByTeamId }`
+- **RoomQuestion** = `{ id, categoryId, points, position, text }` — **no `correctAnswer`**
+
+See _Gameplay contract notes_ below for the secrecy and timer constraints.
 
 | Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
 |---|---|---|---|---|---|---|
-| `server:gameplay:board-state-updated` | server | gameplay | room | Coarse snapshot of the board (6×5, categories, point values, taken cells) | §16.4 | Stage 6.2 (on entering GAME_BOARD + reconnect snapshot) |
-| `server:gameplay:cell-selected` | server | gameplay | room | Captain's cell pick (room-wide pending highlight) | §16.4 | Superseded by cell-selection-requested — name reserved, NOT emitted in Stage 6 |
-| `server:gameplay:cell-selection-requested` | server | gameplay | host | Active-team captain requested a cell; host is prompted to approve/reject | §16.4 | Stage 6.2 (SelectQuestion) |
-| `server:gameplay:cell-selection-approved` | server | gameplay | room | Host approved → transition GAME_BOARD → QUESTION_OPENED | §16.4 | Stage 6.2 (OpenQuestion) |
-| `server:gameplay:cell-selection-rejected` | server | gameplay | room | Host rejected → stays in GAME_BOARD, captain re-picks | §16.4 | Stage 6.2 (OpenQuestion/reject) |
-| `server:gameplay:question-opened` | server | gameplay | room | Question revealed (text/points/category) — WITHOUT correctAnswer | §16.4 | Stage 6.2 (OpenQuestion) |
-| `server:gameplay:question-timer-started` | server | gameplay | room | Answer timer started; carries endsAt (client counts down locally) | §16.4 | Stage 6.2 (OpenQuestion) |
-| `server:gameplay:question-timer-ended` | server | gameplay | room | Answer timer expired (lazy ClockPort check, no server scheduler) → QUESTION_OPENED → ANSWER_REVIEW | §16.4 | Stage 6.2 |
-| `server:gameplay:answer-submitted` | server | gameplay | room | Team submitted an answer (fact only; answer text payload TBD in 6.2 — possibly host-only) | §16.4 | Stage 6.2 (SubmitAnswer) |
-| `server:gameplay:answer-accepted` | server | gameplay | room | Host accepted the answer — review outcome, NOT scoring | §16.4 | Stage 6.2 (ReviewAnswer) |
-| `server:gameplay:answer-rejected` | server | gameplay | room | Host rejected the answer — review outcome, NOT scoring | §16.4 | Stage 6.2 (ReviewAnswer) |
-| `server:gameplay:question-correct-answer-shown-to-host` | server | gameplay | host | Correct answer shown ONLY to host after the team answered | §16.4 | Stage 6.2 (ReviewAnswer) — HOST-ONLY, never to players (Этап2 §8) |
-| `server:gameplay:cell-blocked` | server | gameplay | room | Cell blocked (on both correct and incorrect answers) | §16.4 | Stage 6.2 (ReviewAnswer) |
-| `server:gameplay:score-changed` | server | gameplay | room | Team score changed | §16.4 | Stage 7.1 (ReviewAnswer) — accepted review, POSITIVE `delta`; ALSO Stage 8.3 (PurchaseItemUseCase) on a shop debit, NEGATIVE `delta` (only `balance` moves, `earnedScore` holds); payload `{ roomId, teamId, earnedScore, balance, delta }` |
+| `server:gameplay:board-state-updated` | server | gameplay | room | Coarse snapshot of the board (6×5, categories, point values, taken cells) | §16.4 | Emitted since 6.2a by OpenQuestion / RejectSelection / ReviewAnswer (board snapshot after a move); payload `{ roomId, cells: BoardCell[] }` |
+| `server:gameplay:cell-selected` | server | gameplay | room | Captain's cell pick (room-wide pending highlight) | §16.4 | **Superseded** by cell-selection-requested — name reserved, no constant defined, NEVER emitted |
+| `server:gameplay:cell-selection-requested` | server | gameplay | host | Active-team captain requested a cell; host is prompted to approve/reject | §16.4 | Emitted since 6.2b by SelectQuestionUseCase (captain `POST board/select`), host audience via `HostRealtimeEventsPort`; payload `{ roomId, cell: BoardCell }` |
+| `server:gameplay:cell-selection-approved` | server | gameplay | room | Host approved → transition GAME_BOARD → QUESTION_OPENED | §16.4 | Emitted since 6.2a by OpenQuestionUseCase (host `POST questions/open`); payload `{ roomId, cell: BoardCell }` |
+| `server:gameplay:cell-selection-rejected` | server | gameplay | room | Host rejected → stays in GAME_BOARD, captain re-picks | §16.4 | Emitted since 6.2a by RejectSelectionUseCase (host `POST questions/reject`); payload `{ roomId, cell: BoardCell }` (followed by a `board-state-updated`) |
+| `server:gameplay:question-opened` | server | gameplay | room | Question revealed (text/points/category) — WITHOUT correctAnswer | §16.4 | Emitted since 6.2a by OpenQuestionUseCase; payload `{ roomId, cellId, question: RoomQuestion }` — `question` carries **no `correctAnswer`** |
+| `server:gameplay:question-timer-started` | server | gameplay | room | Answer timer started; carries endsAt (client counts down locally) | §16.4 | Emitted since 6.2a by OpenQuestionUseCase; payload `{ roomId, cellId, startedAt, endsAt }` (Date → ISO strings on the wire) |
+| `server:gameplay:question-timer-ended` | server | gameplay | room | Answer timer expired (lazy ClockPort check, no server scheduler) → QUESTION_OPENED → ANSWER_REVIEW | §16.4 | Emitted since 6.2a by AdvanceOnTimeoutUseCase (host `POST game/advance` timeout bridge); payload `{ roomId, cellId: string \| null }` |
+| `server:gameplay:answer-submitted` | server | gameplay | room | Team submitted an answer — CARRIES the answer text room-wide | §16.4 | Emitted since 6.2a by SubmitAnswerUseCase (captain `POST questions/answer`), **room-wide**; payload `{ roomId, cellId, teamId, answer: string \| null }` — the `answer` TEXT is broadcast to the whole room (NOT persisted; a live echo) |
+| `server:gameplay:answer-accepted` | server | gameplay | room | Host accepted the answer — review outcome, NOT scoring | §16.4 | Emitted since 6.2a by ReviewAnswerUseCase (host `POST questions/review`) on accept; payload `{ roomId, cellId, teamId: string \| null }` (`teamId` = the opening team) |
+| `server:gameplay:answer-rejected` | server | gameplay | room | Host rejected the answer — review outcome, NOT scoring | §16.4 | Emitted since 6.2a by ReviewAnswerUseCase on reject; SAME emit position/shape as `answer-accepted` (the accept flag picks the name); payload `{ roomId, cellId, teamId: string \| null }` |
+| `server:gameplay:question-correct-answer-shown-to-host` | server | gameplay | host | Correct answer shown ONLY to host after the team answered | §16.4 | Emitted since 6.2b by ReviewAnswerUseCase **only when `revealAnswer: true`**, host audience; payload `{ roomId, cellId, correctAnswer }` — never in a room-wide payload (Этап2 §8) |
+| `server:gameplay:cell-blocked` | server | gameplay | room | Cell blocked (on both correct and incorrect answers) | §16.4 | Emitted since 6.2a by ReviewAnswerUseCase (both outcomes); payload `{ roomId, cellId, state, answeredByTeamId: string \| null }` (`state` = BLOCKED; `answeredByTeamId` null on reject) |
+| `server:gameplay:score-changed` | server | gameplay | room | Team score changed | §16.4 | Emitted since 7.1 by ReviewAnswerUseCase (accepted review, POSITIVE `delta`); ALSO since 8.3 by PurchaseItemUseCase on a shop debit, NEGATIVE `delta` (only `balance` moves, `earnedScore` holds); payload `{ roomId, teamId, earnedScore, balance, delta }` |
 | `server:game-session:game-turn-changed` | server | game-session | room | Active team changed | §16.4 → see game-session | Shared §16.3/§16.4 — not duplicated in gameplay (emitted by StartGame in 5.2a and by MoveToNextTurn in 6.2) |
 
 ### Gameplay — client commands (§16.4)
@@ -231,9 +243,10 @@ keeps its existing `game-session` name — shared by §16.3/§16.4, not a second
 
 ### Gameplay contract notes (§16.4)
 
-- **Payloads & emission are Stage 6.2.** This section fixes only the
-  name / direction / area / audience contract — no payload shape or emission
-  wiring is implied.
+- **Payloads & emission are live since Stage 6.2** (6.2a wired the room-wide
+  rows; 6.2b the two host rows). Each event's payload is in the Status column
+  above; the shared `BoardCell` / `RoomQuestion` projections are defined in this
+  section's intro. The room-wide payloads never carry `correctAnswer`.
 - **Secrecy, fixed now.** `question-opened` goes to the **room without
   `correctAnswer`**; the correct answer reaches the host **only** via
   `question-correct-answer-shown-to-host` (host audience) and is never broadcast
