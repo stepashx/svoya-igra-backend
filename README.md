@@ -216,8 +216,12 @@ See [.env.example](.env.example) for the full annotated variable list and
   frontend.** The connecting model: how to stitch REST, WebSocket, auth, and the
   12-stage machine together, with end-to-end play scenarios. It links out to the
   references below rather than duplicating them.
+- [docs/demo.md](docs/demo.md) — bring the backend up and play a full demo game
+  end to end through REST/WS (no frontend), for showing the backbone off.
 - [docs/realtime-events.md](docs/realtime-events.md) — the detailed WebSocket
   event catalog (names, directions, audiences, payloads).
+- [docs/ws-testing.md](docs/ws-testing.md) — manual WebSocket test checklist
+  (the plan's §22 scenarios mapped to real events, with how-to-verify steps).
 - [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md) — schema,
   migrations, and the seed flow.
 - [docs/local-development.md](docs/local-development.md) — detailed local dev flow.
