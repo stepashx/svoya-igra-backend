@@ -1,115 +1,115 @@
-# Build Your Project Presentation — Backend
+# Своя игра: собери презентацию проекта — бэкенд
 
 [![CI](https://github.com/stepashx/svoya-igra-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/stepashx/svoya-igra-backend/actions/workflows/ci.yml)
 
-Backend for the educational real-time multiplayer game *"Своя игра: собери
-презентацию проекта"*. NestJS + TypeScript, PostgreSQL + Drizzle, MinIO
-(S3-compatible) storage, WebSocket (Socket.IO), and Swagger — REST and WebSocket
-share a single backend process/URL.
+Бэкенд для учебной многопользовательской real-time игры *"Своя игра: собери
+презентацию проекта"*. NestJS + TypeScript, PostgreSQL + Drizzle, хранилище MinIO
+(S3-совместимое), WebSocket (Socket.IO) и Swagger — REST и WebSocket
+используют один процесс/URL бэкенда.
 
-This repository is **backend only**. There is no frontend here; the frontend is
-an external consumer of the REST API, WebSocket events, and public file URLs.
+Этот репозиторий — **только бэкенд**. Фронтенда здесь нет; фронтенд является
+внешним потребителем REST API, событий WebSocket и публичных URL файлов.
 
-> **Status — game backbone complete.** A game now plays end to end, from the
-> lobby through to a finished result. The full 12-stage lifecycle, the REST
-> surface (13 controllers, browsable at Swagger `/docs`), the realtime events
-> ([docs/realtime-events.md](docs/realtime-events.md)), and the data layer
-> (PostgreSQL + Drizzle migrations and static seeds) are all implemented.
+> **Статус — backbone игры готов.** Игра теперь проходит от начала до конца, от
+> лобби до завершённого результата. Полный жизненный цикл из 12 стадий, REST-
+> поверхность (13 контроллеров, доступных для просмотра в Swagger `/docs`),
+> realtime-события ([docs/realtime-events.md](docs/realtime-events.md)) и слой
+> данных (миграции PostgreSQL + Drizzle и статические сиды) — всё реализовано.
 >
-> Internal documentation (this stage) is complete — this README and the `docs/`
-> set are in line with the implemented backbone. **Not yet done:** further test
-> hardening and production concerns (deployment, real auth, private storage)
-> deliberately deferred to post-MVP — see [Known limitations](#known-limitations)
-> and [Roadmap](#roadmap).
+> Внутренняя документация (этот этап) завершена — этот README и набор `docs/`
+> приведены в соответствие с реализованным backbone. **Ещё не сделано:**
+> дальнейшее упрочнение тестов и production-аспекты (деплой, настоящая
+> аутентификация, приватное хранилище) намеренно отложены на post-MVP — см.
+> [Известные ограничения](#известные-ограничения) и [Дорожная карта](#дорожная-карта).
 
-## Prerequisites
+## Предварительные требования
 
-- **Node.js 22** (LTS) and **npm** (the repo uses `package-lock.json`).
-- **Docker** and **Docker Compose v2** (`docker compose`, not `docker-compose`).
+- **Node.js 22** (LTS) и **npm** (репозиторий использует `package-lock.json`).
+- **Docker** и **Docker Compose v2** (`docker compose`, а не `docker-compose`).
 
-## Setup
+## Установка
 
-The canonical local flow runs the backend on the host against Compose-provided
-PostgreSQL and MinIO:
+Канонический локальный поток запускает бэкенд на хосте против предоставленных
+Compose PostgreSQL и MinIO:
 
 ```bash
-cp .env.example .env                  # local-dev defaults work out of the box
-docker compose up -d postgres minio   # start the infrastructure
-npm install                           # install dependencies (incl. dev tooling)
-npm run db:migrate                    # create the schema
-npm run db:seed                       # load static catalogs + provision the MinIO bucket
-npm run start:dev                     # run the backend with reload
+cp .env.example .env                  # дефолты локальной разработки работают сразу
+docker compose up -d postgres minio   # запустить инфраструктуру
+npm install                           # установить зависимости (вкл. dev-инструменты)
+npm run db:migrate                    # создать схему
+npm run db:seed                       # загрузить статические каталоги + создать бакет MinIO
+npm run start:dev                     # запустить бэкенд с перезагрузкой
 ```
 
-`db:migrate` and `db:seed` run **on the host** — they use `drizzle-kit` /
-`ts-node`, which are dev dependencies absent from the production backend image,
-so they cannot run inside the container and instead connect to the
-Compose-published `localhost` ports. Both are idempotent; see
+`db:migrate` и `db:seed` выполняются **на хосте** — они используют `drizzle-kit` /
+`ts-node`, которые являются dev-зависимостями, отсутствующими в production-образе
+бэкенда, поэтому не могут выполняться внутри контейнера и вместо этого
+подключаются к опубликованным Compose портам `localhost`. Оба идемпотентны; см.
 [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md).
 
-### Everything in Docker
+### Всё в Docker
 
-To run the backend in Compose too, build and start the full stack, then apply
-the schema and seeds from the host (same reason as above):
+Чтобы запустить бэкенд тоже в Compose, соберите и запустите полный стек, затем
+примените схему и сиды с хоста (по той же причине, что и выше):
 
 ```bash
 cp .env.example .env
-npm run docker:up     # build + start backend, postgres, minio (detached)
-npm install           # host tooling for the data-layer scripts
+npm run docker:up     # собрать + запустить backend, postgres, minio (в фоне)
+npm install           # инструменты хоста для скриптов слоя данных
 npm run db:migrate
 npm run db:seed
 ```
 
-Stop everything:
+Остановить всё:
 
 ```bash
-npm run docker:down            # stop & remove containers (keeps data volumes)
-npm run docker:reset:volumes   # also delete postgres + minio data (DESTRUCTIVE)
+npm run docker:down            # остановить и удалить контейнеры (тома с данными сохраняются)
+npm run docker:reset:volumes   # также удалить данные postgres + minio (РАЗРУШИТЕЛЬНО)
 ```
 
-## npm scripts
+## npm-скрипты
 
-| Script | Purpose |
+| Скрипт | Назначение |
 |---|---|
-| `npm run start:dev` | Run the backend on the host with reload |
-| `npm run start` / `npm run start:prod` | Run without watch / run the compiled `dist/` |
+| `npm run start:dev` | Запустить бэкенд на хосте с перезагрузкой |
+| `npm run start` / `npm run start:prod` | Запустить без watch / запустить скомпилированный `dist/` |
 | `npm run build` | `nest build` → `dist/` |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint (`--max-warnings 0`) |
-| `npm test` | Jest unit tests |
-| `npm run test:e2e` | REST end-to-end tests (need PostgreSQL + MinIO) |
-| `npm run db:migrate` | Apply migrations to the database |
-| `npm run db:generate` | Regenerate migration SQL from the schema (offline) |
-| `npm run db:check` | Validate the migration journal |
-| `npm run db:seed` | Validate + load catalogs, provision the MinIO bucket |
-| `npm run docker:up` | Build images and start the full stack (detached) |
-| `npm run docker:down` | Stop and remove containers (data volumes kept) |
-| `npm run docker:logs` | Follow logs from all services |
-| `npm run docker:reset:volumes` | `down -v` — removes containers **and data** |
-| `npm run docker:config` | Validate & print the resolved Compose config |
+| `npm test` | Юнит-тесты Jest |
+| `npm run test:e2e` | Сквозные REST-тесты (нужны PostgreSQL + MinIO) |
+| `npm run db:migrate` | Применить миграции к базе данных |
+| `npm run db:generate` | Перегенерировать SQL миграции из схемы (офлайн) |
+| `npm run db:check` | Проверить журнал миграций |
+| `npm run db:seed` | Проверить + загрузить каталоги, создать бакет MinIO |
+| `npm run docker:up` | Собрать образы и запустить полный стек (в фоне) |
+| `npm run docker:down` | Остановить и удалить контейнеры (тома с данными сохраняются) |
+| `npm run docker:logs` | Следить за логами всех сервисов |
+| `npm run docker:reset:volumes` | `down -v` — удаляет контейнеры **и данные** |
+| `npm run docker:config` | Проверить и вывести разрешённую конфигурацию Compose |
 
-## Verifying the stack
+## Проверка стека
 
-| What | URL | Notes |
+| Что | URL | Примечания |
 |---|---|---|
-| Swagger UI | http://localhost:3000/docs | OpenAPI document for the REST surface |
-| Health | http://localhost:3000/api/health | JSON report (see [Health](#health)) |
-| MinIO console | http://localhost:9001 | login `minioadmin` / `minioadmin` |
-| MinIO S3 API | http://localhost:9000 | used by the backend + public file URLs |
+| Swagger UI | http://localhost:3000/docs | OpenAPI-документ для REST-поверхности |
+| Health | http://localhost:3000/api/health | JSON-отчёт (см. [Health](#health)) |
+| Консоль MinIO | http://localhost:9001 | логин `minioadmin` / `minioadmin` |
+| MinIO S3 API | http://localhost:9000 | используется бэкендом + публичные URL файлов |
 
 ### Swagger
 
-`http://localhost:3000/docs` serves the OpenAPI document for the REST surface,
-grouped by the eight feature-area tags (Health, Game Session, Gameplay,
-Commerce, Presentation, Defense, Evaluation, Realtime). It is the complete
-browsable reference for the REST endpoints: every endpoint carries its
-request/response DTOs, the shared error-envelope response, per-endpoint 4xx
-status codes, and a file-picker on the upload endpoints.
+`http://localhost:3000/docs` отдаёт OpenAPI-документ для REST-поверхности,
+сгруппированный по восьми тегам feature-областей (Health, Game Session, Gameplay,
+Commerce, Presentation, Defense, Evaluation, Realtime). Это полный
+просматриваемый справочник по REST-эндпоинтам: каждый эндпоинт несёт свои
+request/response DTO, общий ответ error-envelope, коды статусов 4xx для каждого
+эндпоинта и file-picker на эндпоинтах загрузки.
 
 ### Health
 
-`GET http://localhost:3000/api/health` returns `200` when every dependency is
-reachable and `503` if any is not. Shape:
+`GET http://localhost:3000/api/health` возвращает `200`, когда каждая зависимость
+доступна, и `503`, если какая-либо нет. Форма:
 
 ```json
 {
@@ -123,141 +123,141 @@ reachable and `503` if any is not. Shape:
 }
 ```
 
-> **Storage check:** `storage` is green once `npm run db:seed` has provisioned
-> the MinIO bucket. Before that — or if MinIO is down — it reports an error like
-> `MinIO bucket "svoya-igra" does not exist` and the overall status is `503`. The
-> probe is read-only and never creates the bucket. See
+> **Проверка хранилища:** `storage` становится зелёным, как только `npm run
+> db:seed` создал бакет MinIO. До этого — или если MinIO недоступен — она
+> сообщает об ошибке вроде `MinIO bucket "svoya-igra" does not exist`, а общий
+> статус `503`. Проба только на чтение и никогда не создаёт бакет. См.
 > [docs/minio.md](docs/minio.md).
 
 ### WebSocket
 
-REST and WebSocket (Socket.IO, path `/socket.io`) share the same backend process
-and URL. The event contracts — naming, payloads, rooms, reconnect — are
-documented in [docs/realtime-events.md](docs/realtime-events.md).
+REST и WebSocket (Socket.IO, путь `/socket.io`) используют один процесс и URL
+бэкенда. Контракты событий — именование, payload'ы, комнаты, переподключение —
+задокументированы в [docs/realtime-events.md](docs/realtime-events.md).
 
 ### PostgreSQL / MinIO
 
 ```bash
-docker compose ps          # STATUS column shows (healthy) for postgres & minio
-docker compose logs minio  # or postgres, to inspect a specific service
+docker compose ps          # колонка STATUS показывает (healthy) для postgres и minio
+docker compose logs minio  # или postgres, чтобы осмотреть конкретный сервис
 ```
 
-## Architecture
+## Архитектура
 
-- **Clean / Hexagonal** layering: domain (entities, value objects, ports) →
-  application (use cases) → infrastructure (Drizzle persistence, MinIO storage)
-  → presentation (controllers, gateways), wired with NestJS dependency injection.
-- **NestJS** serves REST and WebSocket (Socket.IO) from one process; config is
-  validated once at startup and read only through the typed Config module, never
-  `process.env` directly.
-- **Eight feature areas** (the Swagger tags): Health, Game Session, Gameplay,
+- **Clean / Hexagonal** разбиение на слои: domain (сущности, value-объекты, порты) →
+  application (use-case'ы) → infrastructure (персистентность Drizzle, хранилище MinIO)
+  → presentation (контроллеры, шлюзы), связанные через dependency injection NestJS.
+- **NestJS** отдаёт REST и WebSocket (Socket.IO) из одного процесса; конфигурация
+  валидируется один раз при старте и читается только через типизированный Config-модуль,
+  никогда напрямую из `process.env`.
+- **Восемь feature-областей** (теги Swagger): Health, Game Session, Gameplay,
   Commerce, Presentation, Defense, Evaluation, Realtime.
-- **12-stage game lifecycle:** `LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD →
+- **Жизненный цикл игры из 12 стадий:** `LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD →
   QUESTION_OPENED → ANSWER_REVIEW → SHOP → PRESENTATION_PREPARATION →
   PRESENTATION_DEFENSE → EVALUATION → RESULTS → FINISHED`.
-- **PostgreSQL + Drizzle** (16 tables across five schema areas, one migration)
-  for relational state; **MinIO** for file bytes (QR assets, presentation
-  uploads), with only metadata in the database.
+- **PostgreSQL + Drizzle** (16 таблиц в пяти областях схемы, одна миграция)
+  для реляционного состояния; **MinIO** для байтов файлов (QR-ассеты, загрузки
+  презентаций), при этом в базе данных только метаданные.
 
-## Continuous integration
+## Непрерывная интеграция
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and
-pull request to `master` (and on demand from the Actions tab), with three jobs:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) запускается на каждый push и
+pull request в `master` (и по запросу со вкладки Actions), с тремя задачами:
 
-- **Quality gate** — `typecheck → lint → build → test`, plus a schema-drift
-  guard (`db:generate` must produce no diff).
-- **E2E** — REST end-to-end tests against live PostgreSQL + MinIO, after
-  `db:migrate` and `db:seed`.
-- **Docker (optional)** — manual-only image build, never pushed.
+- **Quality gate** — `typecheck → lint → build → test`, плюс защита от дрейфа
+  схемы (`db:generate` не должен давать diff).
+- **E2E** — сквозные REST-тесты против живых PostgreSQL + MinIO, после
+  `db:migrate` и `db:seed`.
+- **Docker (опционально)** — сборка образа только вручную, без push.
 
-There is **no deployment** — deferred until hosting is chosen. See
+**Деплоя нет** — отложен до выбора хостинга. См.
 [docs/ci.md](docs/ci.md).
 
-## Host vs container
+## Хост против контейнера
 
-The app reads all configuration through the typed Config module — never
-`process.env` directly. Two values differ between running on the host and inside
-Compose, and `docker-compose.yml` overrides them automatically for the backend
-container:
+Приложение читает всю конфигурацию через типизированный Config-модуль — никогда
+напрямую из `process.env`. Два значения различаются при запуске на хосте и внутри
+Compose, и `docker-compose.yml` переопределяет их автоматически для контейнера
+бэкенда:
 
-| Variable | Host (`.env`) | Backend container | Why |
+| Переменная | Хост (`.env`) | Контейнер бэкенда | Почему |
 |---|---|---|---|
-| `DATABASE_URL` | `...@localhost:5432/...` | `...@postgres:5432/...` | service name on the Compose network |
-| `MINIO_ENDPOINT` | `localhost` | `minio` | service name on the Compose network |
-| `MINIO_PUBLIC_URL` | `http://localhost:9000` | *(unchanged)* | the browser, not the backend, opens it |
+| `DATABASE_URL` | `...@localhost:5432/...` | `...@postgres:5432/...` | имя сервиса в сети Compose |
+| `MINIO_ENDPOINT` | `localhost` | `minio` | имя сервиса в сети Compose |
+| `MINIO_PUBLIC_URL` | `http://localhost:9000` | *(без изменений)* | открывает браузер, а не бэкенд |
 
-See [.env.example](.env.example) for the full annotated variable list and
-[docs/local-development.md](docs/local-development.md) for more detail.
+См. [.env.example](.env.example) для полного аннотированного списка переменных и
+[docs/local-development.md](docs/local-development.md) для подробностей.
 
-## Troubleshooting
+## Устранение неполадок
 
-- **`docker compose` says variables are blank / config looks empty** — you have
-  no `.env`. Run `cp .env.example .env`.
-- **Port already in use (`3000`, `5432`, `9000`, `9001`)** — another process or
-  an old stack is bound. Stop it, or change `PORT` / `POSTGRES_PORT` /
-  `MINIO_PORT` / `MINIO_CONSOLE_PORT` in `.env`.
-- **Health shows `storage: error` (bucket does not exist)** — the bucket isn't
-  provisioned yet. Run `npm run db:seed` (see [docs/minio.md](docs/minio.md)).
-- **Feature endpoints error (e.g. `relation "…" does not exist`) or the board is
-  empty** — the schema or catalogs aren't loaded. Run `npm run db:migrate`, then
+- **`docker compose` сообщает, что переменные пустые / конфигурация выглядит пустой** —
+  у вас нет `.env`. Выполните `cp .env.example .env`.
+- **Порт уже занят (`3000`, `5432`, `9000`, `9001`)** — другой процесс или
+  старый стек удерживает его. Остановите его или измените `PORT` / `POSTGRES_PORT` /
+  `MINIO_PORT` / `MINIO_CONSOLE_PORT` в `.env`.
+- **Health показывает `storage: error` (бакет не существует)** — бакет ещё не
+  создан. Выполните `npm run db:seed` (см. [docs/minio.md](docs/minio.md)).
+- **Эндпоинты фич выдают ошибку (например, `relation "…" does not exist`) или поле
+  пустое** — схема или каталоги не загружены. Выполните `npm run db:migrate`, затем
   `npm run db:seed`.
-- **Backend can't reach the database/MinIO from the host** — start the
-  dependencies (`docker compose up -d postgres minio`) and confirm `.env` uses
+- **Бэкенд не может достучаться до базы данных/MinIO с хоста** — запустите
+  зависимости (`docker compose up -d postgres minio`) и убедитесь, что `.env` использует
   `localhost`.
-- **Stale data after config changes** — `npm run docker:reset:volumes` wipes the
-  postgres/minio volumes for a clean slate (deletes local data); re-run
-  `db:migrate` and `db:seed` afterward.
-- **Rebuild after dependency changes** — `docker compose up --build` (or
-  `npm run docker:up`) rebuilds the backend image.
+- **Устаревшие данные после изменений конфигурации** — `npm run docker:reset:volumes`
+  стирает тома postgres/minio для чистого старта (удаляет локальные данные); после
+  заново выполните `db:migrate` и `db:seed`.
+- **Пересборка после изменений зависимостей** — `docker compose up --build` (или
+  `npm run docker:up`) пересобирает образ бэкенда.
 
-## Documentation
+## Документация
 
-- **[docs/frontend-guide.md](docs/frontend-guide.md) — start here to build the
-  frontend.** The connecting model: how to stitch REST, WebSocket, auth, and the
-  12-stage machine together, with end-to-end play scenarios. It links out to the
-  references below rather than duplicating them.
-- [docs/demo.md](docs/demo.md) — bring the backend up and play a full demo game
-  end to end through REST/WS (no frontend), for showing the backbone off.
-- [docs/realtime-events.md](docs/realtime-events.md) — the detailed WebSocket
-  event catalog (names, directions, audiences, payloads).
-- [docs/ws-testing.md](docs/ws-testing.md) — manual WebSocket test checklist
-  (the plan's §22 scenarios mapped to real events, with how-to-verify steps).
-- [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md) — schema,
-  migrations, and the seed flow.
-- [docs/local-development.md](docs/local-development.md) — detailed local dev flow.
-- [docs/minio.md](docs/minio.md) — MinIO console, bucket provisioning, and
-  storage conventions.
-- [docs/ci.md](docs/ci.md) — GitHub Actions pipeline (quality gate, E2E, optional
-  Docker job).
+- **[docs/frontend-guide.md](docs/frontend-guide.md) — начните отсюда для сборки
+  фронтенда.** Связующая модель: как сшить вместе REST, WebSocket, аутентификацию и
+  машину из 12 стадий, со сквозными сценариями игры. Он ссылается на справочники
+  ниже, а не дублирует их.
+- [docs/demo.md](docs/demo.md) — поднять бэкенд и сыграть полную демо-игру
+  от начала до конца через REST/WS (без фронтенда), чтобы показать backbone.
+- [docs/realtime-events.md](docs/realtime-events.md) — подробный каталог событий
+  WebSocket (имена, направления, аудитории, payload'ы).
+- [docs/ws-testing.md](docs/ws-testing.md) — чеклист ручного тестирования WebSocket
+  (сценарии §22 из плана, сопоставленные с реальными событиями, с шагами проверки).
+- [docs/migrations-and-seeds.md](docs/migrations-and-seeds.md) — схема,
+  миграции и поток сидов.
+- [docs/local-development.md](docs/local-development.md) — подробный поток локальной разработки.
+- [docs/minio.md](docs/minio.md) — консоль MinIO, создание бакета и
+  соглашения по хранилищу.
+- [docs/ci.md](docs/ci.md) — пайплайн GitHub Actions (quality gate, E2E, опциональная
+  Docker-задача).
 
-## Known limitations
+## Известные ограничения
 
-This is an **educational MVP** scoped to a single demo game room with a handful
-of participants — not a hardened production service.
+Это **учебный MVP**, рассчитанный на одну демо-комнату игры с горсткой
+участников — не закалённый production-сервис.
 
-- **Public-read object storage.** The MinIO bucket is served via plain anonymous
-  public URLs; no signed URLs, private buckets, CDN, or separate-origin serving.
-  Stored-XSS is mitigated (uploads get a server-canonical `Content-Type` plus
-  `Content-Disposition: attachment`), but the bucket is public by design. See
-  [docs/minio.md](docs/minio.md#known-limitations).
-- **In-memory presence and timers.** Socket presence and the answer / shop /
-  presentation timers live in process memory, so they are lost on restart and
-  assume a **single backend instance** (no horizontal scaling).
-- **Educational auth.** There is no real authentication: hosts and players are
-  identified by reconnect tokens, `FRONTEND_ORIGIN` / `WS_CORS_ORIGIN` default to
-  `*`, and the MinIO credentials are well-known defaults. Lock these down before
-  any shared or public environment.
-- **No deployment.** No deploy jobs, hosting, or environment promotion —
-  deferred until hosting is decided.
+- **Хранилище объектов с публичным чтением.** Бакет MinIO отдаётся через обычные
+  анонимные публичные URL; без presigned URL, приватных бакетов, CDN или отдачи
+  с отдельного origin. Stored-XSS смягчён (загрузки получают серверно-канонический
+  `Content-Type` плюс `Content-Disposition: attachment`), но бакет публичен по замыслу.
+  См. [docs/minio.md](docs/minio.md#известные-ограничения).
+- **Присутствие и таймеры в памяти.** Присутствие сокетов и таймеры ответа / магазина /
+  презентации живут в памяти процесса, поэтому теряются при перезапуске и
+  предполагают **единственный инстанс бэкенда** (без горизонтального масштабирования).
+- **Учебная аутентификация.** Настоящей аутентификации нет: ведущие и игроки
+  идентифицируются по токенам переподключения, `FRONTEND_ORIGIN` / `WS_CORS_ORIGIN` по
+  умолчанию равны `*`, а учётные данные MinIO — общеизвестные дефолты. Закройте это
+  перед любым общим или публичным окружением.
+- **Деплоя нет.** Нет задач деплоя, хостинга или продвижения окружений —
+  отложено до решения по хостингу.
 
-## Roadmap
+## Дорожная карта
 
-- **Stages 1–10 — game backbone.** *Done.* Infrastructure and config, data layer
-  (schema/migrations/seeds), lobby and team setup, game board and battle cycle,
-  scoring, shop & QR tools, presentation upload, defense, evaluation, and final
-  results — a full game from lobby to finished.
-- **Stage 11 — documentation.** *Done.* Internal documentation (README and
-  `docs/` brought in line with the implemented backbone), Swagger finalization
-  (error envelope, file-picker, per-endpoint 4xx statuses), and a frontend
-  integration guide ([docs/frontend-guide.md](docs/frontend-guide.md)).
-- **Stage 12 — testing & hardening.** *Next.*
+- **Этапы 1–10 — backbone игры.** *Готово.* Инфраструктура и конфигурация, слой
+  данных (схема/миграции/сиды), лобби и настройка команд, игровое поле и боевой цикл,
+  начисление очков, магазин и QR-инструменты, загрузка презентаций, защита, оценивание
+  и финальные результаты — полная игра от лобби до завершения.
+- **Этап 11 — документация.** *Готово.* Внутренняя документация (README и
+  `docs/` приведены в соответствие с реализованным backbone), финализация Swagger
+  (error-envelope, file-picker, коды статусов 4xx для каждого эндпоинта) и руководство
+  по интеграции фронтенда ([docs/frontend-guide.md](docs/frontend-guide.md)).
+- **Этап 12 — тестирование и упрочнение.** *Следующее.*

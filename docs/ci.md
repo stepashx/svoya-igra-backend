@@ -1,116 +1,118 @@
-# Continuous Integration (GitHub Actions)
+# Непрерывная интеграция (GitHub Actions)
 
-The pipeline is defined in
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml). It is the project's
-**quality gate** for the backend: every push and pull request runs the same
-checks a developer runs locally, plus an end-to-end suite against real
-PostgreSQL and MinIO. There is intentionally **no deployment** — see
-[Deferred](#deferred).
+Пайплайн определён в
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml). Это **quality gate**
+проекта для backend: каждый push и pull request прогоняет те же проверки, что
+разработчик запускает локально, плюс end-to-end-набор против настоящих
+PostgreSQL и MinIO. Деплоя намеренно **нет** — см.
+[Отложено](#отложено).
 
-The workflow has three jobs:
+В workflow три job:
 
-- **`build`** — the required quality gate (typecheck · lint · build · unit tests
-  · schema-drift guard). No services.
-- **`e2e`** — REST end-to-end tests against live PostgreSQL + MinIO.
-- **`docker`** — optional, manual-only image build.
+- **`build`** — обязательный quality gate (typecheck · lint · build · unit-тесты
+  · защита от schema-drift). Без сервисов.
+- **`e2e`** — REST end-to-end-тесты против живых PostgreSQL + MinIO.
+- **`docker`** — опциональная, только ручная сборка образа.
 
-## Triggers
+## Триггеры
 
-The workflow runs on:
+Workflow запускается по:
 
-- **push** to `master`;
-- **pull_request** targeting `master`;
-- **workflow_dispatch** — a manual run from the repository's **Actions** tab.
+- **push** в `master`;
+- **pull_request** в `master`;
+- **workflow_dispatch** — ручной запуск со вкладки **Actions** репозитория.
 
-Runs are grouped by ref with `cancel-in-progress`, so pushing a newer commit to
-the same branch/PR cancels the in-flight run. The workflow token is read-only
-(`permissions: contents: read`).
+Запуски группируются по ref через `cancel-in-progress`, поэтому push более
+свежего коммита в ту же ветку/PR отменяет выполняющийся запуск. Токен workflow
+работает только на чтение (`permissions: contents: read`).
 
-## Quality-gate job (`build`)
+## Job контроля качества (`build`)
 
-The required `build` job runs on `ubuntu-latest` and executes the same npm
-scripts used locally, in order:
+Обязательный job `build` выполняется на `ubuntu-latest` и запускает те же
+npm-скрипты, что и локально, по порядку:
 
-| Step | Command | Checks |
+| Шаг | Команда | Проверки |
 |---|---|---|
-| Checkout | `actions/checkout@v4` | Fetch the repository |
-| Setup Node | `actions/setup-node@v4` | Node from [`.nvmrc`](../.nvmrc), npm cache |
-| Install | `npm ci --prefer-offline --no-audit --no-fund` | Reproducible install from the lockfile |
-| Typecheck | `npm run typecheck` | TypeScript compiles with no errors |
-| Lint | `npm run lint` | ESLint passes (`--max-warnings 0`, no auto-fix) |
-| Build | `npm run build` | `nest build` produces `dist/` |
-| Test | `npm test` | Jest unit tests pass |
-| Schema drift | `npm run db:generate` | Migrations match the Drizzle schema (fails on any diff) |
+| Checkout | `actions/checkout@v4` | Получить репозиторий |
+| Setup Node | `actions/setup-node@v4` | Node из [`.nvmrc`](../.nvmrc), кэш npm |
+| Install | `npm ci --prefer-offline --no-audit --no-fund` | Воспроизводимая установка из lockfile |
+| Typecheck | `npm run typecheck` | TypeScript компилируется без ошибок |
+| Lint | `npm run lint` | ESLint проходит (`--max-warnings 0`, без авто-исправлений) |
+| Build | `npm run build` | `nest build` создаёт `dist/` |
+| Test | `npm test` | Unit-тесты Jest проходят |
+| Schema drift | `npm run db:generate` | Миграции совпадают со схемой Drizzle (падает при любом diff) |
 
-`npm ci` **fails if `package.json` and `package-lock.json` are out of sync**, so
-the install step doubles as a lockfile check. Node is pinned by `.nvmrc` (Node
-22) through `setup-node`'s `node-version-file`, matching the project target and
-the `Dockerfile`; `setup-node` also caches the npm download directory keyed by
-the lockfile, so installs stay fast across runs.
+`npm ci` **падает, если `package.json` и `package-lock.json` рассинхронизированы**,
+поэтому шаг установки заодно проверяет lockfile. Node закреплён через `.nvmrc`
+(Node 22) с помощью `node-version-file` у `setup-node`, что совпадает с целевой
+версией проекта и `Dockerfile`; `setup-node` также кэширует каталог загрузок npm
+с ключом по lockfile, поэтому установки остаются быстрыми между запусками.
 
-The **schema-drift** step regenerates SQL from the TypeScript schema and fails
-if anything under `migrations/` changes — that would mean the committed
-migration drifted from the schema and must be regenerated (`npm run db:generate`
-and commit). It runs **offline**: `db:generate` does not connect, so a dummy
-`DATABASE_URL` is enough to satisfy config parsing. See
+Шаг **schema-drift** заново генерирует SQL из TypeScript-схемы и падает, если
+что-либо под `migrations/` меняется — это означало бы, что закоммиченная
+миграция разошлась со схемой и должна быть перегенерирована (`npm run db:generate`
+и коммит). Он выполняется **офлайн**: `db:generate` не подключается, поэтому
+фиктивного `DATABASE_URL` достаточно, чтобы пройти разбор конфигурации. См.
 [migrations-and-seeds.md](migrations-and-seeds.md).
 
-### No live services in this job
+### Никаких живых сервисов в этом job
 
-The quality gate's tests are **unit-level and mocked** — they do not require a
-live PostgreSQL or MinIO, so the `build` job starts **no services**. The
-database- and storage-backed checks run in the separate `e2e` job below.
+Тесты quality gate — **unit-уровня и с моками** — им не нужны живые PostgreSQL
+или MinIO, поэтому job `build` не запускает **никаких сервисов**. Проверки,
+опирающиеся на базу данных и хранилище, выполняются в отдельном job `e2e` ниже.
 
-## E2E job (`e2e`)
+## E2E-job (`e2e`)
 
-The `e2e` job runs the REST end-to-end suite (`npm run test:e2e`) against **real
-PostgreSQL and MinIO**, exercising the full path through the schema and storage.
+Job `e2e` запускает REST end-to-end-набор (`npm run test:e2e`) против **настоящих
+PostgreSQL и MinIO**, прогоняя полный путь через схему и хранилище.
 
-**PostgreSQL** runs as a GitHub Actions **service container** (`postgres:16`,
-DB `svoya_igra`, user/password `postgres`/`postgres`, port `5432`) with a
-`pg_isready` health check, so the job only proceeds once the database is
-accepting connections.
+**PostgreSQL** работает как **service container** GitHub Actions (`postgres:16`,
+БД `svoya_igra`, пользователь/пароль `postgres`/`postgres`, порт `5432`) с
+health-check `pg_isready`, поэтому job продолжается только после того, как база
+начинает принимать соединения.
 
-**MinIO** runs as a **step** (`docker run … minio/minio:RELEASE.2025-09-07… server
-/data`), not a service container. The reason: a service container cannot override
-its image's command, and `minio/minio` with no command just prints help and
-exits — so MinIO is launched as a step where `server /data` can be passed
-(mirroring `docker-compose.yml`). Its root credentials are sourced from the job's
-`MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` so the server's root user equals the keys
-the app and seed authenticate with. A follow-up step polls
-`/minio/health/live` until MinIO is ready.
+**MinIO** работает как **шаг** (`docker run … minio/minio:RELEASE.2025-09-07… server
+/data`), а не как service container. Причина: service container не может
+переопределить команду своего образа, а `minio/minio` без команды просто печатает
+справку и завершается — поэтому MinIO запускается шагом, где можно передать
+`server /data` (повторяя `docker-compose.yml`). Его root-учётные данные берутся из
+`MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` job, чтобы root-пользователь сервера был
+равен ключам, которыми аутентифицируются приложение и сид. Следующий шаг опрашивает
+`/minio/health/live`, пока MinIO не будет готов.
 
-The job's `env` block points the app and the data-layer scripts at these
-services (`DATABASE_URL` → `localhost:5432`, `MINIO_ENDPOINT=localhost`,
-`MINIO_PORT=9000`, bucket `svoya-igra`, path-style). Steps then run, in order:
+Блок `env` job направляет приложение и скрипты слоя данных на эти сервисы
+(`DATABASE_URL` → `localhost:5432`, `MINIO_ENDPOINT=localhost`,
+`MINIO_PORT=9000`, бакет `svoya-igra`, path-style). Затем шаги выполняются по
+порядку:
 
-| Step | Command | What it does |
+| Шаг | Команда | Что делает |
 |---|---|---|
-| Apply migrations | `npm run db:migrate` | Create the schema in the service PostgreSQL |
-| Seed catalogs (and MinIO bucket) | `npm run db:seed` | Validate catalogs, provision the bucket + QR SVGs, upsert catalogs |
-| E2E tests | `npm run test:e2e` | Run the REST end-to-end suite |
+| Apply migrations | `npm run db:migrate` | Создать схему в сервисном PostgreSQL |
+| Seed catalogs (and MinIO bucket) | `npm run db:seed` | Проверить каталоги, подготовить бакет + QR SVG, выполнить upsert каталогов |
+| E2E tests | `npm run test:e2e` | Прогнать REST end-to-end-набор |
 
-This is the same host-side `db:migrate` → `db:seed` flow developers run locally
-(see [migrations-and-seeds.md](migrations-and-seeds.md)) — CI proves it works
-end to end on a clean machine.
+Это тот же хостовый поток `db:migrate` → `db:seed`, который разработчики запускают
+локально (см. [migrations-and-seeds.md](migrations-and-seeds.md)) — CI доказывает,
+что он работает от начала до конца на чистой машине.
 
-## Optional Docker job (`docker`)
+## Опциональный Docker-job (`docker`)
 
-The `docker` job validates that the backend image still builds from the
-`Dockerfile`. It:
+Job `docker` проверяет, что образ backend всё ещё собирается из `Dockerfile`.
+Он:
 
-- runs **only** on a manual `workflow_dispatch`
-  (`if: github.event_name == 'workflow_dispatch'`), never on push or pull
+- запускается **только** при ручном `workflow_dispatch`
+  (`if: github.event_name == 'workflow_dispatch'`), никогда на push или pull
   request;
-- is `continue-on-error: true`, so it never blocks the workflow result;
-- runs `docker build -t svoya-igra-backend:ci .` and **never pushes** the image
-  to any registry.
+- помечен `continue-on-error: true`, поэтому никогда не блокирует результат
+  workflow;
+- выполняет `docker build -t svoya-igra-backend:ci .` и **никогда не пушит** образ
+  в какой-либо реестр.
 
-If you don't need the image check, simply ignore this job — the quality gate and
-E2E job are the gates that run on every push and PR.
+Если проверка образа вам не нужна, просто игнорируйте этот job — quality gate и
+job e2e являются гейтами, которые запускаются на каждый push и PR.
 
-## Deferred
+## Отложено
 
-- **Deployment** — no deploy jobs, environment promotion, registry pushes, or
-  hosting-specific scripts. Deployment is deferred until hosting is decided
-  (master-context open questions 6–7).
+- **Деплой** — нет job-ов деплоя, продвижения окружений, пушей в реестр или
+  скриптов под конкретный хостинг. Деплой отложен до решения по хостингу
+  (открытые вопросы master-контекста 6–7).

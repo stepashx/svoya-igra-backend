@@ -1,135 +1,134 @@
-# Realtime Event Contract
+# Контракт realtime-событий
 
-Transport: WebSocket (Socket.IO) sharing the single backend process/URL with
-REST. The base gateway (`src/realtime/realtime.gateway.ts`) is **transport
-only** — it groups sockets by room and broadcasts events published through
-`RealtimeEventsPort`. It contains no business logic and validates no game state.
+Транспорт: WebSocket (Socket.IO), разделяющий единый backend-процесс/URL с
+REST. Базовый gateway (`src/realtime/realtime.gateway.ts`) — **только
+транспорт**: он группирует сокеты по комнате и рассылает события, опубликованные
+через `RealtimeEventsPort`. Бизнес-логики в нём нет, состояние игры он не валидирует.
 
-This document is the single place where realtime events are listed. The full
-surface is **live**: events are really emitted across the eight feature areas
-below (§16.1–§16.8), each with its payload documented. The base gateway stays
-transport-only; socket identity, reconnect and the host/team audiences are
-layered on by the game-session gateway and the application use cases (see
-§5.2a / §5.2b and each area's Status column).
+Этот документ — единственное место, где перечислены realtime-события. Вся
+поверхность **живая**: события действительно эмитируются по восьми областям функциональности
+ниже (§16.1–§16.8), payload каждого задокументирован. Базовый gateway остаётся
+только транспортом; идентичность сокета, переподключение и аудитории host/team
+наслаиваются game-session gateway и use-case'ами приложения (см.
+§5.2a / §5.2b и колонку Status каждой области).
 
-## Naming convention
+## Соглашение об именовании
 
-Event names are direction-aware and area-scoped:
+Имена событий учитывают направление и привязаны к области:
 
-- `server:<area>:<event>` — server → client broadcast
-- `client:<area>:<command>` — client → server command
+- `server:<area>:<event>` — рассылка server → client
+- `client:<area>:<command>` — команда client → server
 
-`<area>` matches a compact feature area (`game-session`, `gameplay`,
-`commerce`, `presentation`, `evaluation`, `realtime`). Build names with
-`realtimeEventName(direction, area, name)` from
+`<area>` соответствует компактной области функциональности (`game-session`, `gameplay`,
+`commerce`, `presentation`, `evaluation`, `realtime`). Имена строятся через
+`realtimeEventName(direction, area, name)` из
 `src/realtime/realtime-events.constants.ts`.
 
-## Audience
+## Аудитория
 
-Audience is a **publishing** concern, not part of the event name. A future event
-is delivered to the right recipients by emitting to the appropriate socket
-group:
+Аудитория — это вопрос **публикации**, а не часть имени события. Событие
+доставляется нужным получателям эмиссией в соответствующую группу сокетов:
 
-- **room-wide** — every socket joined to the room group
-- **host-only** — the host socket(s)
-- **team-only** — the sockets of one team
-- **captain-only** — the captain socket
-- **originating socket** — only the single source socket (e.g. a snapshot or an
-  error returned to the caller)
+- **room-wide** — всем в комнате: каждый сокет, присоединённый к группе комнаты
+- **host-only** — только ведущему: сокет(ы) ведущего
+- **team-only** — только команде: сокеты одной команды
+- **captain-only** — только капитану: сокет капитана
+- **originating socket** — только отправителю: единственный исходный сокет (например, снимок или
+  ошибка, возвращаемая вызывающему)
 
-## Transport-level commands (defined now)
+## Команды транспортного уровня (определены сейчас)
 
-| Event | Direction | Purpose |
+| Событие | Направление | Назначение |
 |---|---|---|
-| `client:realtime:join-room` | client → server | Join the socket to a room group. Transport grouping only — no membership validation. |
-| `client:realtime:leave-room` | client → server | Leave the room group. |
+| `client:realtime:join-room` | client → server | Присоединить сокет к группе комнаты. Только транспортная группировка — без валидации членства. |
+| `client:realtime:leave-room` | client → server | Покинуть группу комнаты. |
 
-## Reconnect
+## Переподключение
 
-A reconnect token may be supplied on the handshake (`auth.reconnectToken` or
-query). The `GameSessionGateway` resolves it — player first, then host — joins
-the socket to its room, runs the `ReconnectClient` use case, and returns
-`connection-restored` + the `room-state` snapshot to the originating socket. A
-missing/empty token leaves the socket anonymous (served by the base gateway
-only); a non-empty token that fails to resolve gets a single `error` then a
-forced disconnect. The full step-by-step is _Reconnect flow (handshake)_ under
+Токен переподключения может быть передан на handshake (`auth.reconnectToken` или
+query). `GameSessionGateway` разрешает его — сначала игрок, затем ведущий — присоединяет
+сокет к его комнате, запускает use-case `ReconnectClient` и возвращает
+`connection-restored` + снимок `room-state` исходному сокету.
+Отсутствующий/пустой токен оставляет сокет анонимным (обслуживается только базовым gateway);
+непустой токен, который не удаётся разрешить, получает один `error`, затем принудительное
+отключение. Полный пошаговый разбор — в _Поток переподключения (handshake)_ под
 §5.2b.
 
-## Feature events
+## События функциональности
 
-The eight catalogs below cover the whole surface: Game Session common (§16.1),
-Lobby (§16.2), Game start (§16.3), Gameplay (§16.4), Commerce (§16.5),
-Presentation (§16.6), Defense (§16.7) and Evaluation (§16.8).
+Восемь каталогов ниже покрывают всю поверхность: общие Game Session (§16.1),
+Lobby (§16.2), старт игры (§16.3), Gameplay (§16.4), Commerce (§16.5),
+Presentation (§16.6), Defense (§16.7) и Evaluation (§16.8).
 
-**Names, audiences and payloads.** Each catalog fixes the canonical name,
-direction, area and audience of every event. Payloads are documented too — the
-§16.1–§16.3 shapes under §5.2a / §5.2b, and the §16.4–§16.8 shapes inline in each
-area's Status column. Audience is a publishing concern (see the Audience section
-above), shown per row.
+**Имена, аудитории и payload'ы.** Каждый каталог фиксирует каноническое имя,
+направление, область и аудиторию каждого события. Payload'ы тоже задокументированы — формы
+§16.1–§16.3 под §5.2a / §5.2b, а формы §16.4–§16.8 — inline в колонке Status каждой
+области. Аудитория — это вопрос публикации (см. раздел Audience
+выше), показана построчно.
 
-### Game Session — server broadcasts (§16.1 Common)
+### Game Session — серверные рассылки (§16.1 Общие)
 
-| Canonical name | Direction | Area | Audience | Purpose | Plan ref |
+| Каноническое имя | Направление | Область | Аудитория | Назначение | Ссылка на план |
 |---|---|---|---|---|---|
-| `server:game-session:room-state` | server | game-session | originating socket | Room-state snapshot on join/reconnect | §16.1 |
-| `server:game-session:room-closed` | server | game-session | room | Room closed (status→CLOSED) | §16.1 |
-| `server:realtime:error` | server | realtime | originating socket | Transport error while handling a command/state | §16.1 |
-| `server:game-session:error` | server | game-session | originating socket | Domain lobby rejection (e.g. name taken, room full) | §16.1 |
-| `server:game-session:client-reconnected` | server | game-session | room | Player restored identity; connection_status→CONNECTED | §16.1 |
-| `server:game-session:host-reconnected` | server | game-session | room | Host restored identity and control | §16.1 |
-| `server:realtime:connection-lost` | server | realtime | room | A member's socket dropped; marked DISCONNECTED | §16.1 |
-| `server:realtime:connection-restored` | server | realtime | originating socket | Socket restored; triggers a room-state snapshot | §16.1 |
+| `server:game-session:room-state` | server | game-session | originating socket | Снимок room-state при подключении/переподключении | §16.1 |
+| `server:game-session:room-closed` | server | game-session | room | Комната закрыта (status→CLOSED) | §16.1 |
+| `server:realtime:error` | server | realtime | originating socket | Транспортная ошибка при обработке команды/состояния | §16.1 |
+| `server:game-session:error` | server | game-session | originating socket | Доменный отказ лобби (например, имя занято, комната полна) | §16.1 |
+| `server:game-session:client-reconnected` | server | game-session | room | Игрок восстановил идентичность; connection_status→CONNECTED | §16.1 |
+| `server:game-session:host-reconnected` | server | game-session | room | Ведущий восстановил идентичность и управление | §16.1 |
+| `server:realtime:connection-lost` | server | realtime | room | Сокет участника отвалился; помечен DISCONNECTED | §16.1 |
+| `server:realtime:connection-restored` | server | realtime | originating socket | Сокет восстановлен; запускает снимок room-state | §16.1 |
 
-### Game Session — server broadcasts (§16.2 Lobby)
+### Game Session — серверные рассылки (§16.2 Лобби)
 
-| Canonical name | Direction | Area | Audience | Purpose | Plan ref |
+| Каноническое имя | Направление | Область | Аудитория | Назначение | Ссылка на план |
 |---|---|---|---|---|---|
-| `server:game-session:player-joined` | server | game-session | room | A player joined the room | §16.2 |
-| `server:game-session:player-left` | server | game-session | room | A player left the room | §16.2 |
-| `server:game-session:player-profile-updated` | server | game-session | room | A player changed name/avatar | §16.2 |
-| `server:game-session:team-created` | server | game-session | room | Team created; the first team → stage TEAM_SETUP | §16.2 |
-| `server:game-session:team-joined` | server | game-session | room | A player joined a team | §16.2 |
-| `server:game-session:team-updated` | server | game-session | room | Team attributes changed (name/captain/roster) | §16.2 |
-| `server:game-session:team-topic-selected` | server | game-session | room | Team selected a topic (teams.selectedTopicId, unique per room) | §16.2 |
-| `server:game-session:team-ready-changed` | server | game-session | room | teams.isReady toggled; at ≥ MIN_TEAMS_TO_START ready → stage READY_CHECK | §16.2 |
-| `server:game-session:game-can-start-changed` | server | game-session | room | "Host can start" flag: count of is_ready=true teams crosses MIN_TEAMS_TO_START. Catalog target is host; currently emitted **room-wide** (`MarkTeamReadyUseCase.emitToRoom`), narrowing to the host audience deferred (§5.2b omissions) — non-host clients may ignore it | §16.2 |
+| `server:game-session:player-joined` | server | game-session | room | Игрок вошёл в комнату | §16.2 |
+| `server:game-session:player-left` | server | game-session | room | Игрок покинул комнату | §16.2 |
+| `server:game-session:player-profile-updated` | server | game-session | room | Игрок сменил имя/аватар | §16.2 |
+| `server:game-session:team-created` | server | game-session | room | Команда создана; первая команда → стадия TEAM_SETUP | §16.2 |
+| `server:game-session:team-joined` | server | game-session | room | Игрок вошёл в команду | §16.2 |
+| `server:game-session:team-updated` | server | game-session | room | Изменились атрибуты команды (имя/капитан/состав) | §16.2 |
+| `server:game-session:team-topic-selected` | server | game-session | room | Команда выбрала тему (teams.selectedTopicId, уникальна в комнате) | §16.2 |
+| `server:game-session:team-ready-changed` | server | game-session | room | teams.isReady переключён; при ≥ MIN_TEAMS_TO_START готовых → стадия READY_CHECK | §16.2 |
+| `server:game-session:game-can-start-changed` | server | game-session | room | Флаг «ведущий может стартовать»: число команд с is_ready=true пересекает MIN_TEAMS_TO_START. Цель каталога — ведущий; сейчас эмитируется **всем в комнате** (`MarkTeamReadyUseCase.emitToRoom`), сужение до аудитории ведущего отложено (§5.2b omissions) — не-host клиенты могут его игнорировать | §16.2 |
 
-### Game Session — server broadcasts (§16.3 Game start)
+### Game Session — серверные рассылки (§16.3 Старт игры)
 
-| Canonical name | Direction | Area | Audience | Purpose | Plan ref |
+| Каноническое имя | Направление | Область | Аудитория | Назначение | Ссылка на план |
 |---|---|---|---|---|---|
-| `server:game-session:game-started` | server | game-session | room | Host started the game; stage→GAME_BOARD; backend assigns first team, random turn_order, random topics to teams that didn't pick | §16.3 |
-| `server:game-session:game-first-team-selected` | server | game-session | room | First team chosen at random (rooms.currentTeamId) | §16.3 |
-| `server:game-session:game-stage-changed` | server | game-session | room | rooms.currentStage transition (LOBBY→TEAM_SETUP→READY_CHECK→GAME_BOARD) | §16.3 |
-| `server:game-session:game-turn-changed` | server | game-session | room | Active team changed (turn_order). Shared by §16.3 and §16.4 — not duplicated in gameplay | §16.3 |
-| `server:game-session:game-state-updated` | server | game-session | room | Broad delta snapshot of game state (incl. auto-assigned topics at start) | §16.3 |
+| `server:game-session:game-started` | server | game-session | room | Ведущий стартовал игру; стадия→GAME_BOARD; backend назначает первую команду, случайный turn_order, случайные темы командам, которые не выбрали | §16.3 |
+| `server:game-session:game-first-team-selected` | server | game-session | room | Первая команда выбрана случайно (rooms.currentTeamId) | §16.3 |
+| `server:game-session:game-stage-changed` | server | game-session | room | Переход rooms.currentStage (LOBBY→TEAM_SETUP→READY_CHECK→GAME_BOARD) | §16.3 |
+| `server:game-session:game-turn-changed` | server | game-session | room | Сменилась активная команда (turn_order). Общее для §16.3 и §16.4 — в gameplay не дублируется | §16.3 |
+| `server:game-session:game-state-updated` | server | game-session | room | Широкий дельта-снимок состояния игры (вкл. автоназначенные темы на старте) | §16.3 |
 
-### Game Session — client commands
+### Game Session — клиентские команды
 
-Incoming commands, area `game-session`. Audience does not apply to commands;
-sender authorization does. **Emits** lists the resulting `server:game-session:*`
-broadcasts by their short name. Payloads are Stage 5.2.
+Входящие команды, область `game-session`. Аудитория к командам не применяется;
+применяется авторизация отправителя. **Emits** перечисляет результирующие рассылки
+`server:game-session:*` по их короткому имени. Payload'ы — Этап 5.2.
 
-| Canonical name | Direction | Area | Purpose | Emits | Sender |
+| Каноническое имя | Направление | Область | Назначение | Emits | Отправитель |
 |---|---|---|---|---|---|
-| `client:game-session:create-team` | client | game-session | Create a team | `team-created` (+ `game-stage-changed` on the first) | player/captain |
-| `client:game-session:join-team` | client | game-session | Join a team | `team-joined`, `team-updated` | player |
-| `client:game-session:leave-team` | client | game-session | Leave a team | `team-updated` | player |
-| `client:game-session:update-profile` | client | game-session | Change name/avatar | `player-profile-updated` | player |
-| `client:game-session:select-topic` | client | game-session | Select a topic | `team-topic-selected` | captain |
-| `client:game-session:set-ready` | client | game-session | Toggle readiness | `team-ready-changed`, `game-can-start-changed` | captain |
-| `client:game-session:start-game` | client | game-session | Start the game | `game-started`, `game-first-team-selected`, `game-stage-changed`, `game-turn-changed` | host |
+| `client:game-session:create-team` | client | game-session | Создать команду | `team-created` (+ `game-stage-changed` на первой) | player/captain |
+| `client:game-session:join-team` | client | game-session | Войти в команду | `team-joined`, `team-updated` | player |
+| `client:game-session:leave-team` | client | game-session | Покинуть команду | `team-updated` | player |
+| `client:game-session:update-profile` | client | game-session | Сменить имя/аватар | `player-profile-updated` | player |
+| `client:game-session:select-topic` | client | game-session | Выбрать тему | `team-topic-selected` | captain |
+| `client:game-session:set-ready` | client | game-session | Переключить готовность | `team-ready-changed`, `game-can-start-changed` | captain |
+| `client:game-session:start-game` | client | game-session | Стартовать игру | `game-started`, `game-first-team-selected`, `game-stage-changed`, `game-turn-changed` | host |
 
-### Plan name → canonical name (§16.1–16.3)
+### Имя плана → каноническое имя (§16.1–16.3)
 
-Canonical names are derived mechanically from the plan tokens: a plan token
-`x:y` becomes `<direction>:<area>:x-y` in kebab-case, preserving the original
-tokens (camelCase is split on case, e.g. `profileUpdated` → `profile-updated`).
-The bare `error` (no `:`) maps to the transport area as `server:realtime:error`.
-Area is assigned by concern: session/lobby domain → `game-session`; pure
-transport (errors, connection lifecycle) → `realtime`.
+Канонические имена выводятся механически из токенов плана: токен плана
+`x:y` становится `<direction>:<area>:x-y` в kebab-case, сохраняя исходные
+токены (camelCase разбивается по регистру, например `profileUpdated` → `profile-updated`).
+Голый `error` (без `:`) отображается в транспортную область как `server:realtime:error`.
+Область назначается по принадлежности: домен session/lobby → `game-session`; чистый
+транспорт (ошибки, жизненный цикл соединения) → `realtime`.
 
-| Plan name (§16) | Canonical name |
+| Имя плана (§16) | Каноническое имя |
 |---|---|
 | `room:state` | `server:game-session:room-state` |
 | `room:closed` | `server:game-session:room-closed` |
@@ -153,77 +152,77 @@ transport (errors, connection lifecycle) → `realtime`.
 | `game:turnChanged` | `server:game-session:game-turn-changed` |
 | `game:stateUpdated` | `server:game-session:game-state-updated` |
 
-The §16.1 `error` also yields a domain variant `server:game-session:error`
-(lobby rejections such as name-taken / room-full). It has no separate plan
-token — it refines the single plan `error` into transport vs. domain.
+§16.1 `error` также порождает доменный вариант `server:game-session:error`
+(отказы лобби, такие как name-taken / room-full). У него нет отдельного токена
+плана — он уточняет единственный план `error` на транспорт против домена.
 
-### Rooms & membership: REST vs. transport
+### Комнаты и членство: REST vs. транспорт
 
-- **CreateRoom / JoinRoom are REST**, not WS commands (§15.1 Rooms API, §15.2
-  Players API). They issue identity and a reconnect token; no
-  `client:game-session:*` command creates or joins a room.
-- The transport commands `client:realtime:join-room` /
-  `client:realtime:leave-room` already exist in
-  `realtime-events.constants.ts`. They only attach/detach the socket to a room
-  channel — they are **not** room membership.
+- **CreateRoom / JoinRoom — это REST**, а не WS-команды (§15.1 Rooms API, §15.2
+  Players API). Они выдают идентичность и токен переподключения; никакая
+  команда `client:game-session:*` не создаёт и не подключает к комнате.
+- Транспортные команды `client:realtime:join-room` /
+  `client:realtime:leave-room` уже существуют в
+  `realtime-events.constants.ts`. Они лишь присоединяют/отсоединяют сокет к каналу
+  комнаты — это **не** членство в комнате.
 
-### Gameplay — server broadcasts (§16.4)
+### Gameplay — серверные рассылки (§16.4)
 
-Catalog of the §16.4 "board & questions" broadcasts, emitted by the game-session
-battle use cases since sub-stage 6.2 (6.2a wired the room-wide rows; 6.2b the two
-host rows). The **Status** column records each name's disposition **and its
-payload**. Audience is a publishing concern (see the Audience section above),
-shown per row. Two shared projections appear in the payloads:
+Каталог рассылок §16.4 «поле и вопросы», эмитируемых боевыми use-case'ами
+game-session с под-этапа 6.2 (6.2a подключил room-wide строки; 6.2b — две
+host-строки). Колонка **Status** фиксирует диспозицию каждого имени **и его
+payload**. Аудитория — это вопрос публикации (см. раздел Audience выше),
+показана построчно. В payload'ах фигурируют две общие проекции:
 
 - **BoardCell** = `{ id, categoryId, points, position, state, openedByTeamId, answeredByTeamId }`
-- **RoomQuestion** = `{ id, categoryId, points, position, text }` — **no `correctAnswer`**
+- **RoomQuestion** = `{ id, categoryId, points, position, text }` — **без `correctAnswer`**
 
-See _Gameplay contract notes_ below for the secrecy and timer constraints.
+Об ограничениях секретности и таймера см. _Заметки по контракту Gameplay_ ниже.
 
-| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+| Каноническое имя | Направление | Область | Аудитория | Назначение | Ссылка на план | Status |
 |---|---|---|---|---|---|---|
-| `server:gameplay:board-state-updated` | server | gameplay | room | Coarse snapshot of the board (6×5, categories, point values, taken cells) | §16.4 | Emitted since 6.2a by RejectSelection / ReviewAnswer (board snapshot after a move); payload `{ roomId, cells: BoardCell[] }` |
-| `server:gameplay:cell-selected` | server | gameplay | room | Captain's cell pick (room-wide pending highlight) | §16.4 | **Superseded** by cell-selection-requested — name reserved, no constant defined, NEVER emitted |
-| `server:gameplay:cell-selection-requested` | server | gameplay | host | Active-team captain requested a cell; host is prompted to approve/reject | §16.4 | Emitted since 6.2b by SelectQuestionUseCase (captain `POST board/select`), host audience via `HostRealtimeEventsPort`; payload `{ roomId, cell: BoardCell }` |
-| `server:gameplay:cell-selection-approved` | server | gameplay | room | Host approved → transition GAME_BOARD → QUESTION_OPENED | §16.4 | Emitted since 6.2a by OpenQuestionUseCase (host `POST questions/open`); payload `{ roomId, cell: BoardCell }` |
-| `server:gameplay:cell-selection-rejected` | server | gameplay | room | Host rejected → stays in GAME_BOARD, captain re-picks | §16.4 | Emitted since 6.2a by RejectSelectionUseCase (host `POST questions/reject`); payload `{ roomId, cell: BoardCell }` (followed by a `board-state-updated`) |
-| `server:gameplay:question-opened` | server | gameplay | room | Question revealed (text/points/category) — WITHOUT correctAnswer | §16.4 | Emitted since 6.2a by OpenQuestionUseCase; payload `{ roomId, cellId, question: RoomQuestion }` — `question` carries **no `correctAnswer`** |
-| `server:gameplay:question-timer-started` | server | gameplay | room | Answer timer started; carries endsAt (client counts down locally) | §16.4 | Emitted since 6.2a by OpenQuestionUseCase; payload `{ roomId, cellId, startedAt, endsAt }` (Date → ISO strings on the wire) |
-| `server:gameplay:question-timer-ended` | server | gameplay | room | Answer timer expired (lazy ClockPort check, no server scheduler) → QUESTION_OPENED → ANSWER_REVIEW | §16.4 | Emitted since 6.2a by AdvanceOnTimeoutUseCase (host `POST game/advance` timeout bridge); payload `{ roomId, cellId: string \| null }` |
-| `server:gameplay:answer-submitted` | server | gameplay | room | Team submitted an answer — CARRIES the answer text room-wide | §16.4 | Emitted since 6.2a by SubmitAnswerUseCase (captain `POST questions/answer`), **room-wide**; payload `{ roomId, cellId, teamId, answer: string \| null }` — the `answer` TEXT is broadcast to the whole room (NOT persisted; a live echo) |
-| `server:gameplay:answer-accepted` | server | gameplay | room | Host accepted the answer — review outcome, NOT scoring | §16.4 | Emitted since 6.2a by ReviewAnswerUseCase (host `POST questions/review`) on accept; payload `{ roomId, cellId, teamId: string \| null }` (`teamId` = the opening team) |
-| `server:gameplay:answer-rejected` | server | gameplay | room | Host rejected the answer — review outcome, NOT scoring | §16.4 | Emitted since 6.2a by ReviewAnswerUseCase on reject; SAME emit position/shape as `answer-accepted` (the accept flag picks the name); payload `{ roomId, cellId, teamId: string \| null }` |
-| `server:gameplay:question-correct-answer-shown-to-host` | server | gameplay | host | Correct answer shown ONLY to host after the team answered | §16.4 | Emitted since 6.2b by ReviewAnswerUseCase **only when `revealAnswer: true`**, host audience; payload `{ roomId, cellId, correctAnswer }` — never in a room-wide payload (Этап2 §8) |
-| `server:gameplay:cell-blocked` | server | gameplay | room | Cell blocked (on both correct and incorrect answers) | §16.4 | Emitted since 6.2a by ReviewAnswerUseCase (both outcomes); payload `{ roomId, cellId, state, answeredByTeamId: string \| null }` (`state` = BLOCKED; `answeredByTeamId` null on reject) |
-| `server:gameplay:score-changed` | server | gameplay | room | Team score changed | §16.4 | Emitted since 7.1 by ReviewAnswerUseCase (accepted review, POSITIVE `delta`); ALSO since 8.3 by PurchaseItemUseCase on a shop debit, NEGATIVE `delta` (only `balance` moves, `earnedScore` holds); payload `{ roomId, teamId, earnedScore, balance, delta }` |
-| `server:game-session:game-turn-changed` | server | game-session | room | Active team changed | §16.4 → see game-session | Shared §16.3/§16.4 — not duplicated in gameplay (emitted by StartGame in 5.2a and by MoveToNextTurn in 6.2) |
+| `server:gameplay:board-state-updated` | server | gameplay | room | Грубый снимок поля (6×5, категории, номиналы, занятые ячейки) | §16.4 | Эмитируется с 6.2a из RejectSelection / ReviewAnswer (снимок поля после хода); payload `{ roomId, cells: BoardCell[] }` |
+| `server:gameplay:cell-selected` | server | gameplay | room | Выбор ячейки капитаном (room-wide подсветка ожидания) | §16.4 | **Вытеснено** cell-selection-requested — имя зарезервировано, константа не определена, НИКОГДА не эмитируется |
+| `server:gameplay:cell-selection-requested` | server | gameplay | host | Капитан активной команды запросил ячейку; ведущему предлагается одобрить/отклонить | §16.4 | Эмитируется с 6.2b из SelectQuestionUseCase (капитан `POST board/select`), аудитория host через `HostRealtimeEventsPort`; payload `{ roomId, cell: BoardCell }` |
+| `server:gameplay:cell-selection-approved` | server | gameplay | room | Ведущий одобрил → переход GAME_BOARD → QUESTION_OPENED | §16.4 | Эмитируется с 6.2a из OpenQuestionUseCase (ведущий `POST questions/open`); payload `{ roomId, cell: BoardCell }` |
+| `server:gameplay:cell-selection-rejected` | server | gameplay | room | Ведущий отклонил → остаётся в GAME_BOARD, капитан перевыбирает | §16.4 | Эмитируется с 6.2a из RejectSelectionUseCase (ведущий `POST questions/reject`); payload `{ roomId, cell: BoardCell }` (за ним следует `board-state-updated`) |
+| `server:gameplay:question-opened` | server | gameplay | room | Вопрос раскрыт (текст/номинал/категория) — БЕЗ correctAnswer | §16.4 | Эмитируется с 6.2a из OpenQuestionUseCase; payload `{ roomId, cellId, question: RoomQuestion }` — `question` несёт **без `correctAnswer`** |
+| `server:gameplay:question-timer-started` | server | gameplay | room | Запущен таймер ответа; несёт endsAt (клиент отсчитывает локально) | §16.4 | Эмитируется с 6.2a из OpenQuestionUseCase; payload `{ roomId, cellId, startedAt, endsAt }` (Date → ISO-строки в проводе) |
+| `server:gameplay:question-timer-ended` | server | gameplay | room | Таймер ответа истёк (ленивая проверка ClockPort, без серверного планировщика) → QUESTION_OPENED → ANSWER_REVIEW | §16.4 | Эмитируется с 6.2a из AdvanceOnTimeoutUseCase (ведущий `POST game/advance` timeout-мост); payload `{ roomId, cellId: string \| null }` |
+| `server:gameplay:answer-submitted` | server | gameplay | room | Команда отправила ответ — НЕСЁТ текст ответа всем в комнате | §16.4 | Эмитируется с 6.2a из SubmitAnswerUseCase (капитан `POST questions/answer`), **всем в комнате**; payload `{ roomId, cellId, teamId, answer: string \| null }` — ТЕКСТ `answer` рассылается всей комнате (НЕ персистится; живое эхо) |
+| `server:gameplay:answer-accepted` | server | gameplay | room | Ведущий принял ответ — итог разбора, НЕ начисление | §16.4 | Эмитируется с 6.2a из ReviewAnswerUseCase (ведущий `POST questions/review`) при принятии; payload `{ roomId, cellId, teamId: string \| null }` (`teamId` = открывающая команда) |
+| `server:gameplay:answer-rejected` | server | gameplay | room | Ведущий отклонил ответ — итог разбора, НЕ начисление | §16.4 | Эмитируется с 6.2a из ReviewAnswerUseCase при отклонении; ТА ЖЕ позиция/форма эмиссии, что у `answer-accepted` (флаг принятия выбирает имя); payload `{ roomId, cellId, teamId: string \| null }` |
+| `server:gameplay:question-correct-answer-shown-to-host` | server | gameplay | host | Правильный ответ показан ТОЛЬКО ведущему после ответа команды | §16.4 | Эмитируется с 6.2b из ReviewAnswerUseCase **только при `revealAnswer: true`**, аудитория host; payload `{ roomId, cellId, correctAnswer }` — никогда в room-wide payload (Этап2 §8) |
+| `server:gameplay:cell-blocked` | server | gameplay | room | Ячейка заблокирована (как при правильных, так и при неправильных ответах) | §16.4 | Эмитируется с 6.2a из ReviewAnswerUseCase (оба исхода); payload `{ roomId, cellId, state, answeredByTeamId: string \| null }` (`state` = BLOCKED; `answeredByTeamId` null при отклонении) |
+| `server:gameplay:score-changed` | server | gameplay | room | Изменились очки команды | §16.4 | Эмитируется с 7.1 из ReviewAnswerUseCase (принятый разбор, ПОЛОЖИТЕЛЬНАЯ `delta`); ТАКЖЕ с 8.3 из PurchaseItemUseCase при списании в магазине, ОТРИЦАТЕЛЬНАЯ `delta` (двигается только `balance`, `earnedScore` держится); payload `{ roomId, teamId, earnedScore, balance, delta }` |
+| `server:game-session:game-turn-changed` | server | game-session | room | Сменилась активная команда | §16.4 → см. game-session | Общее §16.3/§16.4 — в gameplay не дублируется (эмитируется StartGame в 5.2a и MoveToNextTurn в 6.2) |
 
-### Gameplay — client commands (§16.4)
+### Gameplay — клиентские команды (§16.4)
 
-Incoming commands, area `gameplay`. Audience does not apply to commands; sender
-authorization does. **Emits** lists the resulting broadcasts by their short
-name; payloads are Stage 6.2. These rows are **forward-path** — not wired in
-Stage 6; the live commands run over REST (§15.5–15.7). See _Gameplay contract
-notes_ below.
+Входящие команды, область `gameplay`. Аудитория к командам не применяется;
+применяется авторизация отправителя. **Emits** перечисляет результирующие рассылки по их короткому
+имени; payload'ы — Этап 6.2. Эти строки — **forward-path** — не подключены в
+Этапе 6; живые команды работают через REST (§15.5–15.7). См. _Gameplay contract
+notes_ ниже.
 
-| Canonical name | Direction | Area | Purpose | Emits | Sender |
+| Каноническое имя | Направление | Область | Назначение | Emits | Отправитель |
 |---|---|---|---|---|---|
-| `client:gameplay:select-cell` | client | gameplay | Captain picks a cell (SelectQuestion) | `cell-selection-requested` | captain (active team) |
-| `client:gameplay:approve-selection` | client | gameplay | Host approves (OpenQuestion) | `cell-selection-approved`, `question-opened`, `question-timer-started` | host |
-| `client:gameplay:reject-selection` | client | gameplay | Host rejects the pick | `cell-selection-rejected` | host |
-| `client:gameplay:submit-answer` | client | gameplay | Team submits an answer (SubmitAnswer) | `answer-submitted` | captain/team |
-| `client:gameplay:review-answer` | client | gameplay | Host accepts/rejects (ReviewAnswer) | `answer-accepted` \| `answer-rejected`, `score-changed` (on accept), `cell-blocked`, `game-turn-changed` | host |
-| `client:gameplay:reveal-correct-answer` | client | gameplay | Host requests the correct answer (§14.6 optional) | `question-correct-answer-shown-to-host` | host |
+| `client:gameplay:select-cell` | client | gameplay | Капитан выбирает ячейку (SelectQuestion) | `cell-selection-requested` | captain (активная команда) |
+| `client:gameplay:approve-selection` | client | gameplay | Ведущий одобряет (OpenQuestion) | `cell-selection-approved`, `question-opened`, `question-timer-started` | host |
+| `client:gameplay:reject-selection` | client | gameplay | Ведущий отклоняет выбор | `cell-selection-rejected` | host |
+| `client:gameplay:submit-answer` | client | gameplay | Команда отправляет ответ (SubmitAnswer) | `answer-submitted` | captain/team |
+| `client:gameplay:review-answer` | client | gameplay | Ведущий принимает/отклоняет (ReviewAnswer) | `answer-accepted` \| `answer-rejected`, `score-changed` (при принятии), `cell-blocked`, `game-turn-changed` | host |
+| `client:gameplay:reveal-correct-answer` | client | gameplay | Ведущий запрашивает правильный ответ (§14.6 опционально) | `question-correct-answer-shown-to-host` | host |
 
-### Plan name → canonical name (§16.4)
+### Имя плана → каноническое имя (§16.4)
 
-Same derivation as §16.1–16.3: a plan token `x:y` becomes `server:gameplay:x-y`
-in kebab-case (camelCase split on case, e.g. `stateUpdated` → `state-updated`,
-`correctAnswerShownToHost` → `correct-answer-shown-to-host`). Two tokens are
-special: `cell:selected` is reserved/superseded (see above) and `game:turnChanged`
-keeps its existing `game-session` name — shared by §16.3/§16.4, not a second name.
+Тот же вывод, что в §16.1–16.3: токен плана `x:y` становится `server:gameplay:x-y`
+в kebab-case (camelCase разбивается по регистру, например `stateUpdated` → `state-updated`,
+`correctAnswerShownToHost` → `correct-answer-shown-to-host`). Два токена
+особые: `cell:selected` зарезервирован/вытеснен (см. выше), а `game:turnChanged`
+сохраняет своё существующее имя `game-session` — общее для §16.3/§16.4, не второе имя.
 
-| Plan name (§16.4) | Canonical name |
+| Имя плана (§16.4) | Каноническое имя |
 |---|---|
 | `board:stateUpdated` | `server:gameplay:board-state-updated` |
 | `cell:selected` | `server:gameplay:cell-selected` (reserved — superseded by `cell:selectionRequested`, not emitted in Stage 6) |
@@ -241,69 +240,69 @@ keeps its existing `game-session` name — shared by §16.3/§16.4, not a second
 | `score:changed` | `server:gameplay:score-changed` |
 | `game:turnChanged` | `server:game-session:game-turn-changed` (see game-session; shared §16.3/§16.4 — not a second name) |
 
-### Gameplay contract notes (§16.4)
+### Заметки по контракту Gameplay (§16.4)
 
-- **Payloads & emission are live since Stage 6.2** (6.2a wired the room-wide
-  rows; 6.2b the two host rows). Each event's payload is in the Status column
-  above; the shared `BoardCell` / `RoomQuestion` projections are defined in this
-  section's intro. The room-wide payloads never carry `correctAnswer`.
-- **Secrecy, fixed now.** `question-opened` goes to the **room without
-  `correctAnswer`**; the correct answer reaches the host **only** via
-  `question-correct-answer-shown-to-host` (host audience) and is never broadcast
-  to players (Этап 2 §8).
-- **Timer carries `endsAt`.** `question-timer-started` carries `endsAt`; the
-  timer is stored as `startedAt` / `endsAt` / `status`, the client counts down
-  locally, and expiry is a **lazy `ClockPort` check** with no server scheduler.
-- **Battle-cycle mutations are REST.** The real mutations run over REST
-  (§15.5–15.7 — SelectQuestion / OpenQuestion / SubmitAnswer / ReviewAnswer); the
-  incoming `client:gameplay:*` commands above are the planned WS forward-path and
-  are not implemented in Stage 6, exactly as `client:game-session:*` stayed
-  forward-path in Stage 5.0.
+- **Payload'ы и эмиссия живые с Этапа 6.2** (6.2a подключил room-wide
+  строки; 6.2b — две host-строки). Payload каждого события — в колонке Status
+  выше; общие проекции `BoardCell` / `RoomQuestion` определены во вступлении этого
+  раздела. Room-wide payload'ы никогда не несут `correctAnswer`.
+- **Секретность, зафиксирована сейчас.** `question-opened` уходит **всем в комнате без
+  `correctAnswer`**; правильный ответ достигает ведущего **только** через
+  `question-correct-answer-shown-to-host` (аудитория host) и никогда не рассылается
+  игрокам (Этап 2 §8).
+- **Таймер несёт `endsAt`.** `question-timer-started` несёт `endsAt`;
+  таймер хранится как `startedAt` / `endsAt` / `status`, клиент отсчитывает
+  локально, а истечение — это **ленивая проверка `ClockPort`** без серверного планировщика.
+- **Мутации боевого цикла — REST.** Реальные мутации работают через REST
+  (§15.5–15.7 — SelectQuestion / OpenQuestion / SubmitAnswer / ReviewAnswer);
+  входящие команды `client:gameplay:*` выше — это запланированный WS forward-path и
+  не реализованы в Этапе 6, ровно как `client:game-session:*` остался
+  forward-path в Этапе 5.0.
 
-### Commerce — server broadcasts (§16.5)
+### Commerce — серверные рассылки (§16.5)
 
-Catalog of the §16.5 "shop & inventory" broadcasts. The constants live in
-`src/game-session/application/events/commerce-events.ts` (next to the
-game-session use cases that emit them, Design A). The shop lifecycle trio —
-`shop-opened`, `shop-final-opened`, `shop-closed` — is **emitted since
-sub-stage 8.2** (ReviewAnswerUseCase opens the shop, CloseShopUseCase closes
-it); the purchase chain — `shop-state-updated`, `shop-item-purchased`,
-`shop-item-unavailable` (room) and `inventory-updated` (team) — is **emitted
-since sub-stage 8.3** (PurchaseItemUseCase). `shop-purchase-rejected` is
-**superseded** (REST-only 409; no captain emitter built). The **Status**
-column records each name's disposition. Audience is a publishing concern (see
-the Audience section above), shown per row. See _Commerce contract notes_
-below for the privacy constraint enforced throughout.
+Каталог рассылок §16.5 «магазин и инвентарь». Константы лежат в
+`src/game-session/application/events/commerce-events.ts` (рядом с
+use-case'ами game-session, которые их эмитируют, Design A). Тройка жизненного цикла магазина —
+`shop-opened`, `shop-final-opened`, `shop-closed` — **эмитируется с
+под-этапа 8.2** (ReviewAnswerUseCase открывает магазин, CloseShopUseCase закрывает
+его); цепочка покупки — `shop-state-updated`, `shop-item-purchased`,
+`shop-item-unavailable` (room) и `inventory-updated` (team) — **эмитируется
+с под-этапа 8.3** (PurchaseItemUseCase). `shop-purchase-rejected`
+**вытеснено** (только REST 409; эмиттер капитана не построен). Колонка **Status**
+фиксирует диспозицию каждого имени. Аудитория — это вопрос публикации (см.
+раздел Audience выше), показана построчно. Об ограничении приватности, действующем
+повсеместно, см. _Заметки по контракту Commerce_ ниже.
 
-| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+| Каноническое имя | Направление | Область | Аудитория | Назначение | Ссылка на план | Status |
 |---|---|---|---|---|---|---|
-| `server:commerce:shop-opened` | server | commerce | room | Shop opened (ANSWER_REVIEW → SHOP, every-6th-question cadence) | §16.5 | Emitted since 8.2 by ReviewAnswerUseCase (shop trigger) |
-| `server:commerce:shop-final-opened` | server | commerce | room | Final shop opened (board exhausted, before presentations) | §16.5 | Emitted since 8.2 by ReviewAnswerUseCase (shop trigger, exhausted board) |
-| `server:commerce:shop-state-updated` | server | commerce | room | Coarse snapshot of the shop (catalog + purchased state) — WITHOUT publicUrl/QR content | §16.5 | Emitted since 8.3 by PurchaseItemUseCase; payload `{ roomId, items: [{ id, title, description, price, qrToolId, available }] }` (in-tx, LAST of the room block) |
-| `server:commerce:shop-item-purchased` | server | commerce | room | A team bought an item (item + buying team; price snapshot) — WITHOUT publicUrl/QR content | §16.5 | Emitted since 8.3 by PurchaseItemUseCase; payload `{ roomId, teamId, shopItemId, price, purchasedAt }` |
-| `server:commerce:shop-item-unavailable` | server | commerce | room | An item became unavailable (purchased by another team, §14.8) | §16.5 | Emitted since 8.3 by PurchaseItemUseCase; payload `{ roomId, shopItemId }` |
-| `server:commerce:shop-purchase-rejected` | server | commerce | captain | The captain's purchase was rejected (insufficient balance / already purchased) | §16.5 | **Superseded** — REST-only: the rejection is the POST-purchase 409 error reply (no captain socket emitter built) |
-| `server:commerce:inventory-updated` | server | commerce | team | The team's inventory gained the bought QR tool (publicUrl allowed HERE — team audience) | §16.5 | Emitted since 8.3 by PurchaseItemUseCase, team-audience, AFTER commit; payload `{ roomId, teamId, inventoryItem: { id, shopItemId, qrToolId, addedAt }, qrTool: { id, title, description, fileFormat, publicUrl } }` |
-| `server:commerce:shop-closed` | server | commerce | room | Shop closed (host action or shop timer) → back to GAME_BOARD or on to presentations | §16.5 | Emitted since 8.2 by CloseShopUseCase |
+| `server:commerce:shop-opened` | server | commerce | room | Магазин открыт (ANSWER_REVIEW → SHOP, каденция каждого 6-го вопроса) | §16.5 | Эмитируется с 8.2 из ReviewAnswerUseCase (триггер магазина) |
+| `server:commerce:shop-final-opened` | server | commerce | room | Открыт финальный магазин (поле исчерпано, перед презентациями) | §16.5 | Эмитируется с 8.2 из ReviewAnswerUseCase (триггер магазина, исчерпанное поле) |
+| `server:commerce:shop-state-updated` | server | commerce | room | Грубый снимок магазина (каталог + состояние покупок) — БЕЗ publicUrl/QR-содержимого | §16.5 | Эмитируется с 8.3 из PurchaseItemUseCase; payload `{ roomId, items: [{ id, title, description, price, qrToolId, available }] }` (in-tx, ПОСЛЕДНИМ в блоке room) |
+| `server:commerce:shop-item-purchased` | server | commerce | room | Команда купила товар (товар + покупающая команда; снимок цены) — БЕЗ publicUrl/QR-содержимого | §16.5 | Эмитируется с 8.3 из PurchaseItemUseCase; payload `{ roomId, teamId, shopItemId, price, purchasedAt }` |
+| `server:commerce:shop-item-unavailable` | server | commerce | room | Товар стал недоступен (куплен другой командой, §14.8) | §16.5 | Эмитируется с 8.3 из PurchaseItemUseCase; payload `{ roomId, shopItemId }` |
+| `server:commerce:shop-purchase-rejected` | server | commerce | captain | Покупка капитана отклонена (недостаточно баланса / уже куплено) | §16.5 | **Вытеснено** — только REST: отказ — это ответ с ошибкой POST-purchase 409 (эмиттер сокета капитана не построен) |
+| `server:commerce:inventory-updated` | server | commerce | team | В инвентарь команды добавился купленный QR-инструмент (publicUrl разрешён ЗДЕСЬ — аудитория team) | §16.5 | Эмитируется с 8.3 из PurchaseItemUseCase, аудитория team, ПОСЛЕ commit; payload `{ roomId, teamId, inventoryItem: { id, shopItemId, qrToolId, addedAt }, qrTool: { id, title, description, fileFormat, publicUrl } }` |
+| `server:commerce:shop-closed` | server | commerce | room | Магазин закрыт (действие ведущего или таймер магазина) → обратно в GAME_BOARD или дальше к презентациям | §16.5 | Эмитируется с 8.2 из CloseShopUseCase |
 
-### Commerce — client commands (§16.5)
+### Commerce — клиентские команды (§16.5)
 
-Incoming commands, area `commerce`. **Forward-path only** — not wired in Stage
-8; the live mutations run over REST (§15.8 purchase/close), exactly as the
-gameplay and game-session commands stayed forward-path in their stages.
+Входящие команды, область `commerce`. **Только forward-path** — не подключены в Этапе
+8; живые мутации работают через REST (§15.8 purchase/close), ровно как
+команды gameplay и game-session оставались forward-path в своих этапах.
 
-| Canonical name | Direction | Area | Purpose | Emits | Sender |
+| Каноническое имя | Направление | Область | Назначение | Emits | Отправитель |
 |---|---|---|---|---|---|
-| `client:commerce:purchase-item` | client | commerce | Captain buys a shop item (Purchase) | `shop-item-purchased`, `shop-item-unavailable`, `shop-state-updated`, `inventory-updated` \| `shop-purchase-rejected` | captain |
-| `client:commerce:close-shop` | client | commerce | Host closes the shop (CloseShop) | `shop-closed` | host |
+| `client:commerce:purchase-item` | client | commerce | Капитан покупает товар магазина (Purchase) | `shop-item-purchased`, `shop-item-unavailable`, `shop-state-updated`, `inventory-updated` \| `shop-purchase-rejected` | captain |
+| `client:commerce:close-shop` | client | commerce | Ведущий закрывает магазин (CloseShop) | `shop-closed` | host |
 
-### Plan name → canonical name (§16.5)
+### Имя плана → каноническое имя (§16.5)
 
-Same derivation as §16.1–16.4: a plan token `x:y` becomes `server:commerce:x-y`
-in kebab-case (camelCase split on case, e.g. `finalOpened` → `final-opened`,
+Тот же вывод, что в §16.1–16.4: токен плана `x:y` становится `server:commerce:x-y`
+в kebab-case (camelCase разбивается по регистру, например `finalOpened` → `final-opened`,
 `itemPurchased` → `item-purchased`).
 
-| Plan name (§16.5) | Canonical name |
+| Имя плана (§16.5) | Каноническое имя |
 |---|---|
 | `shop:opened` | `server:commerce:shop-opened` |
 | `shop:finalOpened` | `server:commerce:shop-final-opened` |
@@ -314,94 +313,94 @@ in kebab-case (camelCase split on case, e.g. `finalOpened` → `final-opened`,
 | `inventory:updated` | `server:commerce:inventory-updated` |
 | `shop:closed` | `server:commerce:shop-closed` |
 
-### Commerce contract notes (§16.5)
+### Заметки по контракту Commerce (§16.5)
 
-- **The full §16.5 surface is live as of 8.3.** Sub-stage 8.1 fixed the name /
-  direction / area / audience contract; 8.2 wired the lifecycle — `shop-opened`
-  / `shop-final-opened` fire room-wide LAST in the ReviewAnswerUseCase broadcast
-  block (payload `{roomId, currentShopRound, startedAt, endsAt, minClosableAt}`)
-  and `shop-closed` fires from CloseShopUseCase (payload
-  `{roomId, currentShopRound, nextStage}`). Sub-stage 8.3 wires the purchase
-  chain in PurchaseItemUseCase: room-wide `score-changed` (negative delta) →
-  `shop-item-purchased` → `shop-item-unavailable` → `shop-state-updated` fire
-  IN-transaction; then the team-audience `inventory-updated` fires AFTER commit
-  (see the privacy note below). `shop-purchase-rejected` was not built — the
-  captain's rejection is the POST-purchase 409 reply.
-- **QR privacy, fixed now.** The QR tool belongs to the buying team. Room-wide
-  payloads — `shop-item-purchased` and `shop-state-updated` in particular —
-  must NEVER carry `publicUrl` or any QR content; the tool reaches its owners
-  only through the team-audience `inventory-updated` and the team-gated
-  inventory REST reads (§15.9). Leaking a QR to the room would hand every team
-  the purchased advantage (the §16.4 `correctAnswer` secrecy precedent).
-- **"Unavailable" is purchased-state, not affordability.** `shop-item-unavailable`
-  is room-global purchased-state (§14.8: an item is unique per game).
-  Affordability is computed client-side from team balances (Этап 2 §10) — the
-  server does not broadcast per-team affordability.
-- **`inventory-updated` is emitted AFTER the purchase transaction commits.**
-  This is the one deliberate exception to "emit inside the transaction": it is
-  the only payload carrying the QR `publicUrl`, so were it sent in-transaction
-  and the COMMIT then failed, the team would hold a QR for a rolled-back buy.
-  The room-wide events stay in-transaction (their rollback risk is a stale
-  purchased-state, not a leaked secret). The team fan-out reads from in-memory
-  objects and swallows its own failures, so it cannot abort the committed buy.
-- **Team delivery now exists; the captain rejection stays REST-only.** Stage
-  8.3 added the `TeamRealtimeEventsPort` and `PresenceTeamRealtimeEventsAdapter`
-  (the 6.2b host pattern, mirrored): it resolves the team roster from the player
-  repository and fans out to each member's live sockets via
-  `LobbyPresenceRegistry.socketsForPlayer('p:<playerId>')`. No captain emitter
-  was built — `shop-purchase-rejected` is superseded by the POST-purchase 409.
-- **Inventory reconnect is a guarded REST read.** A reconnecting client re-reads
-  `GET rooms/:code/inventory/teams/:teamId[/qr-tools]` (the GET-board reconnect
-  precedent), gated by the `TeamMemberOrHostGuard` (team members or host). The
-  `publicUrl` is allowed on these reads — gated to its owners — but never in a
+- **Вся поверхность §16.5 живая с 8.3.** Под-этап 8.1 зафиксировал контракт имя /
+  направление / область / аудитория; 8.2 подключил жизненный цикл — `shop-opened`
+  / `shop-final-opened` срабатывают room-wide ПОСЛЕДНИМИ в блоке рассылки ReviewAnswerUseCase
+  (payload `{roomId, currentShopRound, startedAt, endsAt, minClosableAt}`),
+  а `shop-closed` срабатывает из CloseShopUseCase (payload
+  `{roomId, currentShopRound, nextStage}`). Под-этап 8.3 подключает цепочку
+  покупки в PurchaseItemUseCase: room-wide `score-changed` (отрицательная delta) →
+  `shop-item-purchased` → `shop-item-unavailable` → `shop-state-updated` срабатывают
+  В транзакции; затем `inventory-updated` с аудиторией team срабатывает ПОСЛЕ commit
+  (см. заметку о приватности ниже). `shop-purchase-rejected` не построен —
+  отказ капитана — это ответ POST-purchase 409.
+- **Приватность QR, зафиксирована сейчас.** QR-инструмент принадлежит покупающей команде. Room-wide
+  payload'ы — в частности `shop-item-purchased` и `shop-state-updated` —
+  НИКОГДА не должны нести `publicUrl` или любое QR-содержимое; инструмент достигает владельцев
+  только через `inventory-updated` с аудиторией team и через team-gated
+  REST-чтения инвентаря (§15.9). Утечка QR в комнату вручила бы каждой команде
+  купленное преимущество (прецедент секретности `correctAnswer` из §16.4).
+- **«Unavailable» — это состояние покупки, а не доступность по средствам.** `shop-item-unavailable` —
+  это room-global состояние покупки (§14.8: товар уникален на игру).
+  Доступность по средствам вычисляется на стороне клиента из балансов команд (Этап 2 §10) —
+  сервер не рассылает доступность по средствам по командам.
+- **`inventory-updated` эмитируется ПОСЛЕ коммита транзакции покупки.**
+  Это единственное намеренное исключение из правила «эмитировать внутри транзакции»: это
+  единственный payload, несущий QR `publicUrl`, так что если бы он был отправлен в транзакции,
+  а COMMIT затем провалился, команда держала бы QR для откатившейся покупки.
+  Room-wide события остаются в транзакции (их риск отката — это устаревшее
+  состояние покупки, а не утёкший секрет). Веерная рассылка команде читает из in-memory
+  объектов и проглатывает собственные сбои, так что не может прервать закоммиченную покупку.
+- **Доставка команде теперь существует; отказ капитана остаётся только REST.** Этап
+  8.3 добавил `TeamRealtimeEventsPort` и `PresenceTeamRealtimeEventsAdapter`
+  (host-паттерн 6.2b, зеркально): он разрешает состав команды из репозитория
+  игроков и веером рассылает живым сокетам каждого участника через
+  `LobbyPresenceRegistry.socketsForPlayer('p:<playerId>')`. Эмиттер капитана
+  не построен — `shop-purchase-rejected` вытеснено ответом POST-purchase 409.
+- **Переподключение инвентаря — это guarded REST-чтение.** Переподключающийся клиент перечитывает
+  `GET rooms/:code/inventory/teams/:teamId[/qr-tools]` (прецедент переподключения GET-board),
+  огороженное `TeamMemberOrHostGuard` (участники команды или ведущий).
+  `publicUrl` разрешён на этих чтениях — огороженный своими владельцами — но никогда в
   room-wide payload.
-- **§19 QR-item uniqueness is transitive — no explicit index (decision G).** The
-  plan's `inventory_items (room_id, qr_tool_id)` unique index is deliberately
-  NOT added in 8.3. A duplicate `(room, qrTool)` is impossible transitively:
-  `purchases (room_id, shop_item_id)` is UNIQUE, shop↔QR is 1:1, and the single
-  `inventory.create` lives inside the same purchase transaction guarded by that
-  unique index. So `db:generate` stays "No schema changes". (If a future stage
-  decouples shop items from QR tools, revisit and add the index.)
-- **Team-hopping during SHOP is a known MVP risk (decision L).** `Join`/`Leave`
-  team are not stage-gated, so during SHOP a non-captain could move into another
-  team via the direct API, read its inventory/QR, and move back. The
-  `TeamMemberOrHostGuard` is correct for the membership it sees; the fix —
-  gating Join/LeaveTeam to the LOBBY stage — is tracked as a separate Stage 5
-  task and intentionally out of 8.3 scope.
+- **§19 уникальность QR-предмета транзитивна — без явного индекса (решение G).**
+  Уникальный индекс плана `inventory_items (room_id, qr_tool_id)` намеренно
+  НЕ добавлен в 8.3. Дубликат `(room, qrTool)` невозможен транзитивно:
+  `purchases (room_id, shop_item_id)` — UNIQUE, shop↔QR — 1:1, а единственный
+  `inventory.create` живёт внутри той же транзакции покупки, огороженной этим
+  уникальным индексом. Так что `db:generate` остаётся «No schema changes». (Если будущий этап
+  расцепит товары магазина и QR-инструменты, пересмотреть и добавить индекс.)
+- **Перепрыгивание между командами во время SHOP — известный риск MVP (решение L).** `Join`/`Leave`
+  team не огорожены по стадии, так что во время SHOP не-капитан мог бы перейти в другую
+  команду через прямой API, прочитать её инвентарь/QR и вернуться обратно.
+  `TeamMemberOrHostGuard` корректен для членства, которое он видит; исправление —
+  огораживание Join/LeaveTeam стадией LOBBY — отслеживается как отдельная задача Этапа 5
+  и намеренно вне scope 8.3.
 
-### Presentation — server broadcasts (§16.6)
+### Presentation — серверные рассылки (§16.6)
 
-Catalog of the §16.6 "presentation preparation" broadcasts. The constants live
-in `src/game-session/application/events/presentation-events.ts` (next to the
-game-session use cases that emit them, Design A). Sub-stage 9.1 fixed the name /
-direction / area / audience contract only (no emission); sub-stage 9.2 wired the
-preparation pair (`preparation-started` + `timer-started` from
-`StartPresentationPreparationUseCase`); **sub-stage 9.3 completes the chain** —
-`submission-uploaded` / `submission-replaced`, `submission-late`, and
-`files-updated` fire from `UploadPresentationUseCase`. The **Status** column
-records each name's disposition. Every row is **room-wide** (see _Presentation
-contract notes_ for why there is no secrecy here).
+Каталог рассылок §16.6 «подготовка презентации». Константы лежат
+в `src/game-session/application/events/presentation-events.ts` (рядом с
+use-case'ами game-session, которые их эмитируют, Design A). Под-этап 9.1 зафиксировал контракт имя /
+направление / область / аудитория только (без эмиссии); под-этап 9.2 подключил
+пару подготовки (`preparation-started` + `timer-started` из
+`StartPresentationPreparationUseCase`); **под-этап 9.3 завершает цепочку** —
+`submission-uploaded` / `submission-replaced`, `submission-late` и
+`files-updated` срабатывают из `UploadPresentationUseCase`. Колонка **Status**
+фиксирует диспозицию каждого имени. Каждая строка — **room-wide** (о том, почему здесь нет секретности,
+см. _Заметки по контракту Presentation_).
 
-| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+| Каноническое имя | Направление | Область | Аудитория | Назначение | Ссылка на план | Status |
 |---|---|---|---|---|---|---|
-| `server:presentation:preparation-started` | server | presentation | room | Preparation opened (the room is already in PRESENTATION_PREPARATION) | §16.6 | Emitted since 9.2 by StartPresentationPreparationUseCase (host `POST start-preparation`), FIRST of the pair; payload `{ roomId, stage }` (`stage` = PRESENTATION_PREPARATION) |
-| `server:presentation:requirements-updated` | server | presentation | room | Requirements catalog shown/updated for preparation | §16.6 | Reserved — the requirements catalog is static (seed-managed): read via `GET requirements`, never pushed (no emitter planned) |
-| `server:presentation:timer-started` | server | presentation | room | Preparation timer started (deadline/endsAt set) | §16.6 | Emitted since 9.2 by StartPresentationPreparationUseCase, right AFTER `preparation-started`; payload `{ roomId, startedAt, endsAt }`. A repeat start REPLACES the timer and re-emits both |
-| `server:presentation:timer-ended` | server | presentation | room | Preparation timer elapsed | §16.6 | Reserved — no server scheduler; the EXPIRED deadline surfaces lazily via `GET deadline` (the §16.4 answer-timer precedent), never pushed |
-| `server:presentation:submission-uploaded` | server | presentation | room | A team uploaded its presentation file (publicUrl allowed — file is public) | §16.6 | Emitted since 9.3 by UploadPresentationUseCase (captain `POST upload`), AFTER commit, FIRST of the chain; payload `{ roomId, teamId, submission: { id, originalFileName, mimeType, fileSize, status, isLate, uploadedAt, publicUrl } }`. `mimeType` is the SERVER-canonical MIME from the extension (never the client type, B2) |
-| `server:presentation:submission-replaced` | server | presentation | room | A team replaced its presentation file | §16.6 | Emitted since 9.3 by UploadPresentationUseCase (captain `PUT upload`, or `POST` over an existing row — ONE upsert use case), AFTER commit; SAME payload as `submission-uploaded`. The submission id and storage key are REUSED (overwrite in place; same-extension re-uploads leave no orphan) |
-| `server:presentation:submission-late` | server | presentation | room | An upload landed after the deadline (status LATE, late penalty applies) | §16.6 | Emitted since 9.3 by UploadPresentationUseCase AFTER commit, ONLY when the upload was late (`isLate`); payload `{ roomId, teamId, submissionId, latePenalty }`. `latePenalty` = the EFFECTIVE penalty (the configured `LATE_PENALTY`, default 1; see note) |
-| `server:presentation:submission-status-changed` | server | presentation | room | A submission's status changed (UPLOADED ⟷ LATE bookkeeping) | §16.6 | **Superseded** (never emitted) — the status is fixed once at create and a replace is a fresh create, so there is no UPLOADED⟷LATE transition to announce. The constant is retained for the §16.6 catalog, exactly like the unemitted `shop-purchase-rejected` (§16.5) |
-| `server:presentation:files-updated` | server | presentation | room | The room's presentation file list changed (public links) | §16.6 | Emitted since 9.3 by UploadPresentationUseCase AFTER commit, LAST of the chain; payload `{ roomId, files: [{ teamId, originalFileName, mimeType, fileSize, publicUrl, status, isLate, uploadedAt }] }` — the whole room catalog, the SAME projection as `GET files` |
+| `server:presentation:preparation-started` | server | presentation | room | Подготовка открыта (комната уже в PRESENTATION_PREPARATION) | §16.6 | Эмитируется с 9.2 из StartPresentationPreparationUseCase (ведущий `POST start-preparation`), ПЕРВЫМ в паре; payload `{ roomId, stage }` (`stage` = PRESENTATION_PREPARATION) |
+| `server:presentation:requirements-updated` | server | presentation | room | Каталог требований показан/обновлён для подготовки | §16.6 | Зарезервировано — каталог требований статичен (управляется сидом): читается через `GET requirements`, никогда не пушится (эмиттер не планируется) |
+| `server:presentation:timer-started` | server | presentation | room | Запущен таймер подготовки (установлен deadline/endsAt) | §16.6 | Эмитируется с 9.2 из StartPresentationPreparationUseCase, сразу ПОСЛЕ `preparation-started`; payload `{ roomId, startedAt, endsAt }`. Повторный старт ЗАМЕНЯЕТ таймер и переэмитирует оба |
+| `server:presentation:timer-ended` | server | presentation | room | Таймер подготовки истёк | §16.6 | Зарезервировано — серверного планировщика нет; ИСТЁКШИЙ deadline проявляется лениво через `GET deadline` (прецедент таймера ответа из §16.4), никогда не пушится |
+| `server:presentation:submission-uploaded` | server | presentation | room | Команда загрузила файл своей презентации (publicUrl разрешён — файл публичный) | §16.6 | Эмитируется с 9.3 из UploadPresentationUseCase (капитан `POST upload`), ПОСЛЕ commit, ПЕРВЫМ в цепочке; payload `{ roomId, teamId, submission: { id, originalFileName, mimeType, fileSize, status, isLate, uploadedAt, publicUrl } }`. `mimeType` — это СЕРВЕРНО-каноничный MIME из расширения (никогда не клиентский тип, B2) |
+| `server:presentation:submission-replaced` | server | presentation | room | Команда заменила файл своей презентации | §16.6 | Эмитируется с 9.3 из UploadPresentationUseCase (капитан `PUT upload`, или `POST` поверх существующей строки — ОДИН upsert use-case), ПОСЛЕ commit; ТОТ ЖЕ payload, что у `submission-uploaded`. id submission и storage key ПЕРЕИСПОЛЬЗУЮТСЯ (перезапись на месте; повторные загрузки с тем же расширением не оставляют сирот) |
+| `server:presentation:submission-late` | server | presentation | room | Загрузка пришла после deadline (status LATE, применяется late penalty) | §16.6 | Эмитируется с 9.3 из UploadPresentationUseCase ПОСЛЕ commit, ТОЛЬКО когда загрузка была поздней (`isLate`); payload `{ roomId, teamId, submissionId, latePenalty }`. `latePenalty` = ЭФФЕКТИВНЫЙ штраф (сконфигурированный `LATE_PENALTY`, по умолчанию 1; см. заметку) |
+| `server:presentation:submission-status-changed` | server | presentation | room | Сменился статус загрузки (учёт UPLOADED ⟷ LATE) | §16.6 | **Вытеснено** (никогда не эмитируется) — статус фиксируется один раз при создании, а замена — это новое создание, так что перехода UPLOADED⟷LATE для анонса нет. Константа сохранена для каталога §16.6, ровно как неэмитируемый `shop-purchase-rejected` (§16.5) |
+| `server:presentation:files-updated` | server | presentation | room | Сменился список файлов презентаций комнаты (публичные ссылки) | §16.6 | Эмитируется с 9.3 из UploadPresentationUseCase ПОСЛЕ commit, ПОСЛЕДНИМ в цепочке; payload `{ roomId, files: [{ teamId, originalFileName, mimeType, fileSize, publicUrl, status, isLate, uploadedAt }] }` — весь каталог комнаты, ТА ЖЕ проекция, что у `GET files` |
 
-### Plan name → canonical name (§16.6)
+### Имя плана → каноническое имя (§16.6)
 
-Same derivation as §16.1–16.5: a plan token `x:y` becomes
-`server:presentation:x-y` in kebab-case (camelCase split on case, e.g.
+Тот же вывод, что в §16.1–16.5: токен плана `x:y` становится
+`server:presentation:x-y` в kebab-case (camelCase разбивается по регистру, например
 `preparationStarted` → `preparation-started`, `submissionStatusChanged` →
 `submission-status-changed`).
 
-| Plan name (§16.6) | Canonical name |
+| Имя плана (§16.6) | Каноническое имя |
 |---|---|
 | `presentation:preparationStarted` | `server:presentation:preparation-started` |
 | `presentation:requirementsUpdated` | `server:presentation:requirements-updated` |
@@ -413,90 +412,90 @@ Same derivation as §16.1–16.5: a plan token `x:y` becomes
 | `presentation:submissionStatusChanged` | `server:presentation:submission-status-changed` |
 | `presentation:filesUpdated` | `server:presentation:files-updated` |
 
-### Presentation contract notes (§16.6)
+### Заметки по контракту Presentation (§16.6)
 
-- **Presentation files are PUBLIC — the deliberate OPPOSITE of the §16.5 QR
-  secrecy.** Per Этап2 §10.15, a team's uploaded file is seen by the host AND
-  the other teams. So presentation payloads MAY carry a file's `publicUrl`
-  room-wide, every one of the nine events is room-audience, and there is
-  **nothing to hide**. Sub-stage 9.3 therefore does NOT apply the §16.5 R3-style
-  team-gating to these events — that gating exists only to keep a purchased QR
-  secret, and a public presentation file has no such secret. Do not copy the
-  commerce privacy pattern here by inertia.
-- **No client commands.** There is no `client:presentation:*` command surface.
-  Upload and replace are REST multipart calls (§15.10, sub-stage 9.3); the host
-  starts the preparation timer over REST — `POST rooms/:code/presentation/start-preparation`
-  (HostAuthGuard, 200), the REST trigger for the §16.6 pair (sub-stage 9.2). The
-  broadcasts above are the only presentation transport, server → client only.
-- **9.2 emits the preparation pair; 9.3 the submission/files chain.** Sub-stage
-  9.1 shipped the skeleton (read models, the submission fact, the two
-  repositories, the exported ports, the real `GET requirements`) and emitted
-  nothing. Sub-stage 9.2 wires `preparation-started` then `timer-started` from
-  `StartPresentationPreparationUseCase` (room-wide, public, IN-transaction) and
-  the public `GET deadline` / `GET submissions` reads. The room is ALREADY in
-  PRESENTATION_PREPARATION (the 8.2 final-shop close parked it there), so — unlike
-  CloseShop — the use case changes NO room state (no Room mutator, no
-  `rooms.update`, STAGE_FLOW untouched: the exit to PRESENTATION_DEFENSE lands in
-  Stage 10). A repeat start REPLACES the in-memory timer with fresh stamps and
-  re-emits both (clients resync, no error). 9.3 wires the submission/files
-  broadcasts (exactly as 8.1 → 8.2/8.3 for commerce).
-- **9.3 upload chain — order and timing.** `UploadPresentationUseCase` is a
-  TWO-PHASE upsert: the bytes stream to MinIO OUTSIDE the transaction/lock (so a
-  25 MB upload never holds a pooled connection — recon M1), then a short
-  locked transaction persists the row. The broadcasts fire AFTER commit (they
-  carry the `publicUrl` of a now-durable row, the 8.3 `inventory-updated`
-  precedent), in a fixed order: `submission-uploaded` OR `submission-replaced`
-  first, then `submission-late` (iff the upload was late), then `files-updated`
-  LAST. All are room-wide and public; there is no team-gated channel here.
-- **Stored MIME is server-canonical, not the client type (B2).** The persisted
-  `mimeType` (and the response `Content-Type`, plus `Content-Disposition:
-  attachment`) is derived from the file EXTENSION — a public-read bucket must
-  never serve a `.pdf` full of HTML as `text/html`. The storage key likewise
-  uses only an allowlisted extension token, never the raw filename (C).
-- **`LATE_PENALTY` is 1 (env), not the plan's 2.** The operator kept the `.env`
-  default `LATE_PENALTY=1`; `submission-late.latePenalty` and the persisted
-  EFFECTIVE penalty therefore carry 1 when late, 0 when on time. Stage 10 applies
+- **Файлы презентаций ПУБЛИЧНЫ — намеренная ПРОТИВОПОЛОЖНОСТЬ секретности QR из
+  §16.5.** Согласно Этап2 §10.15, загруженный файл команды виден ведущему И
+  другим командам. Так что payload'ы презентации МОГУТ нести `publicUrl` файла
+  всем в комнате, каждое из девяти событий имеет аудиторию room, и **прятать
+  нечего**. Поэтому под-этап 9.3 НЕ применяет к этим событиям team-gating в стиле
+  R3 из §16.5 — этот gating существует только для сохранения секрета купленного QR,
+  а у публичного файла презентации такого секрета нет. Не копируйте сюда по
+  инерции паттерн приватности commerce.
+- **Команд клиента нет.** Поверхности команд `client:presentation:*` нет.
+  Загрузка и замена — это REST multipart-вызовы (§15.10, под-этап 9.3); ведущий
+  запускает таймер подготовки по REST — `POST rooms/:code/presentation/start-preparation`
+  (HostAuthGuard, 200), REST-триггер для пары §16.6 (под-этап 9.2). Рассылки выше —
+  единственный транспорт презентации, только server → client.
+- **9.2 эмитирует пару подготовки; 9.3 — цепочку submission/files.** Под-этап
+  9.1 поставил скелет (read-модели, факт submission, два репозитория,
+  экспортированные порты, реальный `GET requirements`) и не эмитировал
+  ничего. Под-этап 9.2 подключает `preparation-started`, затем `timer-started` из
+  `StartPresentationPreparationUseCase` (room-wide, публично, В транзакции) и
+  публичные чтения `GET deadline` / `GET submissions`. Комната УЖЕ в
+  PRESENTATION_PREPARATION (закрытие финального магазина в 8.2 припарковало её там), так что — в отличие от
+  CloseShop — use-case НЕ меняет состояние комнаты (нет мутатора Room, нет
+  `rooms.update`, STAGE_FLOW нетронут: выход в PRESENTATION_DEFENSE приходит в
+  Этапе 10). Повторный старт ЗАМЕНЯЕТ in-memory таймер свежими отметками и
+  переэмитирует оба (клиенты ресинкаются, без ошибки). 9.3 подключает рассылки
+  submission/files (ровно как 8.1 → 8.2/8.3 для commerce).
+- **Цепочка загрузки 9.3 — порядок и тайминг.** `UploadPresentationUseCase` — это
+  ДВУХФАЗНЫЙ upsert: байты стримятся в MinIO ВНЕ транзакции/лока (так что
+  загрузка 25 MB никогда не держит пуловое соединение — recon M1), затем короткая
+  залоченная транзакция персистит строку. Рассылки срабатывают ПОСЛЕ commit (они
+  несут `publicUrl` уже-долговечной строки, прецедент `inventory-updated` из 8.3),
+  в фиксированном порядке: `submission-uploaded` ИЛИ `submission-replaced`
+  первыми, затем `submission-late` (если загрузка была поздней), затем `files-updated`
+  ПОСЛЕДНИМ. Все room-wide и публичны; team-gated канала здесь нет.
+- **Хранимый MIME — серверно-каноничный, не клиентский тип (B2).** Персистируемый
+  `mimeType` (и `Content-Type` ответа, плюс `Content-Disposition:
+  attachment`) выводится из РАСШИРЕНИЯ файла — bucket с публичным чтением не должен
+  никогда отдавать `.pdf`, полный HTML, как `text/html`. Storage key аналогично
+  использует только токен расширения из allowlist, никогда сырое имя файла (C).
+- **`LATE_PENALTY` равен 1 (env), а не 2 из плана.** Оператор оставил умолчание
+  `.env` `LATE_PENALTY=1`; поэтому `submission-late.latePenalty` и персистируемый
+  ЭФФЕКТИВНЫЙ штраф несут 1 при опоздании, 0 вовремя. Этап 10 применяет
   `max(0, rawScore − latePenalty)`.
-- **`submission-status-changed` is Superseded.** The status is decided once at
-  create (UPLOADED vs LATE) and a replace is a fresh create — there is no
-  in-place status transition, so the event has no trigger. The constant stays in
-  the catalog like the unemitted `shop-purchase-rejected`.
-- **Orphan / separate-origin are Stage-11 debts (MVP).** Changing the file's
-  extension on a replace leaves the old object behind (the port has no `delete`);
-  and the public bucket shares the API origin, so the `Content-Disposition`
-  attachment guard — not a separate asset host — is what neutralises stored XSS
-  for now. Both are accepted MVP compromises, hardened in Stage 11.
-- **The preparation timer is in-memory, no scheduler.** Like the answer (§16.4)
-  and shop (§16.5) timers, the deadline is a lazy `ClockPort` comparison in
-  `PresentationTimerRegistry`: `GET deadline` returns RUNNING/EXPIRED/IDLE
-  against `now`, and `timer-ended` is never pushed (the EXPIRED read is the
-  signal). No DB column; state does not survive a process restart (single-node
-  MVP). `requirements-updated` is likewise never pushed — the catalog is static.
+- **`submission-status-changed` Вытеснено.** Статус решается один раз при
+  создании (UPLOADED против LATE), а замена — это новое создание — перехода
+  статуса на месте нет, так что у события нет триггера. Константа остаётся в
+  каталоге, как неэмитируемый `shop-purchase-rejected`.
+- **Сироты / отдельный origin — долги Этапа 11 (MVP).** Смена расширения файла
+  при замене оставляет старый объект позади (у порта нет `delete`);
+  а публичный bucket разделяет origin API, так что guard вложения `Content-Disposition` —
+  а не отдельный asset-хост — это то, что сейчас нейтрализует хранимый XSS.
+  Оба — принятые компромиссы MVP, закаливаются в Этапе 11.
+- **Таймер подготовки in-memory, без планировщика.** Как таймеры ответа (§16.4)
+  и магазина (§16.5), deadline — это ленивое сравнение `ClockPort` в
+  `PresentationTimerRegistry`: `GET deadline` возвращает RUNNING/EXPIRED/IDLE
+  относительно `now`, а `timer-ended` никогда не пушится (чтение EXPIRED — это
+  сигнал). Колонки в БД нет; состояние не переживает рестарт процесса (single-node
+  MVP). `requirements-updated` аналогично никогда не пушится — каталог статичен.
 
-### Defense — server broadcasts (§16.7)
+### Defense — серверные рассылки (§16.7)
 
-Catalog of the §16.7 "presentation defense" broadcasts. The constants live in
-`src/game-session/application/events/defense-events.ts` (next to the game-session
-use cases that emit them, Design A — exactly as commerce/presentation); there is
-no separate defense module. **Sub-stage 10.1 emits all five** — StartDefense
-opens the defenses, FinishPresentation / SkipPresenter advance the queue. The
-**Status** column records each name's disposition. Every row is **room-wide and
-PUBLIC** (see _Defense contract notes_ for why there is no secrecy here).
+Каталог рассылок §16.7 «защита презентации». Константы лежат в
+`src/game-session/application/events/defense-events.ts` (рядом с use-case'ами
+game-session, которые их эмитируют, Design A — ровно как commerce/presentation);
+отдельного модуля defense нет. **Под-этап 10.1 эмитирует все пять** — StartDefense
+открывает защиты, FinishPresentation / SkipPresenter продвигают очередь. Колонка
+**Status** фиксирует диспозицию каждого имени. Каждая строка **room-wide и
+ПУБЛИЧНА** (о том, почему здесь нет секретности, см. _Заметки по контракту Defense_).
 
-| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+| Каноническое имя | Направление | Область | Аудитория | Назначение | Ссылка на план | Status |
 |---|---|---|---|---|---|---|
-| `server:defense:started` | server | defense | room | Defenses opened (PRESENTATION_PREPARATION → PRESENTATION_DEFENSE) — carries the whole presentation order | §16.7 | Emitted since 10.1 by StartDefenseUseCase (host `POST start`), FIRST of the start pair; payload `{ roomId, order }` (`order` = team ids, `turnOrder` ascending) |
-| `server:defense:team-started` | server | defense | room | The next presenter is on | §16.7 | Emitted since 10.1 by StartDefenseUseCase (the first presenter, right AFTER `started`) and by Finish/Skip (each subsequent presenter); payload `{ roomId, teamId }` |
-| `server:defense:team-finished` | server | defense | room | The current presenter's defense finished | §16.7 | Emitted since 10.1 by FinishPresentationUseCase (host `POST finish-presenter`), FIRST of the advance; payload `{ roomId, teamId }` (the presenter that just left) |
-| `server:defense:team-skipped` | server | defense | room | The host skipped the current presenter | §16.7 | Emitted since 10.1 by SkipPresenterUseCase (host `POST skip-presenter`), FIRST of the advance; payload `{ roomId, teamId }`. The ONLY difference from `team-finished` — same advance otherwise |
-| `server:defense:finished` | server | defense | room | The LAST presenter finished/skipped (PRESENTATION_DEFENSE → EVALUATION) | §16.7 | Emitted since 10.1 by Finish/Skip when there is no next presenter (end of the finite queue), in place of `team-started`; payload `{ roomId, nextStage }` (`nextStage` = EVALUATION) |
+| `server:defense:started` | server | defense | room | Защиты открыты (PRESENTATION_PREPARATION → PRESENTATION_DEFENSE) — несёт весь порядок презентаций | §16.7 | Эмитируется с 10.1 из StartDefenseUseCase (ведущий `POST start`), ПЕРВЫМ в стартовой паре; payload `{ roomId, order }` (`order` = team ids, `turnOrder` по возрастанию) |
+| `server:defense:team-started` | server | defense | room | Следующий выступающий вышел | §16.7 | Эмитируется с 10.1 из StartDefenseUseCase (первый выступающий, сразу ПОСЛЕ `started`) и из Finish/Skip (каждый последующий выступающий); payload `{ roomId, teamId }` |
+| `server:defense:team-finished` | server | defense | room | Защита текущего выступающего завершена | §16.7 | Эмитируется с 10.1 из FinishPresentationUseCase (ведущий `POST finish-presenter`), ПЕРВЫМ в продвижении; payload `{ roomId, teamId }` (выступающий, который только что ушёл) |
+| `server:defense:team-skipped` | server | defense | room | Ведущий пропустил текущего выступающего | §16.7 | Эмитируется с 10.1 из SkipPresenterUseCase (ведущий `POST skip-presenter`), ПЕРВЫМ в продвижении; payload `{ roomId, teamId }`. ЕДИНСТВЕННОЕ отличие от `team-finished` — в остальном то же продвижение |
+| `server:defense:finished` | server | defense | room | ПОСЛЕДНИЙ выступающий завершил/пропущен (PRESENTATION_DEFENSE → EVALUATION) | §16.7 | Эмитируется с 10.1 из Finish/Skip, когда следующего выступающего нет (конец конечной очереди), вместо `team-started`; payload `{ roomId, nextStage }` (`nextStage` = EVALUATION) |
 
-### Plan name → canonical name (§16.7)
+### Имя плана → каноническое имя (§16.7)
 
-Same derivation as §16.1–16.6: a plan token `x:y` becomes `server:defense:x-y`
-in kebab-case (camelCase split on case, e.g. `teamStarted` → `team-started`).
+Тот же вывод, что в §16.1–16.6: токен плана `x:y` становится `server:defense:x-y`
+в kebab-case (camelCase разбивается по регистру, например `teamStarted` → `team-started`).
 
-| Plan name (§16.7) | Canonical name |
+| Имя плана (§16.7) | Каноническое имя |
 |---|---|
 | `defense:started` | `server:defense:started` |
 | `defense:teamStarted` | `server:defense:team-started` |
@@ -504,70 +503,70 @@ in kebab-case (camelCase split on case, e.g. `teamStarted` → `team-started`).
 | `defense:teamSkipped` | `server:defense:team-skipped` |
 | `defense:finished` | `server:defense:finished` |
 
-### Defense contract notes (§16.7)
+### Заметки по контракту Defense (§16.7)
 
-- **The defense state is fully DERIVED — there is no defense table.** The current
-  presenter is `Room.currentTeamId` (the same pointer the battle turn uses) and
-  the order is the participating teams' `turnOrder` ascending (assigned at game
-  start, §14.5). 10.1 adds **no** schema, **no** in-memory registry — the state
-  lives in the existing columns and therefore survives a process restart
-  (`db:generate` stays "No schema changes"). The public `GET defense/state`
-  recomputes it on demand for reconnect/refresh.
-- **The queue is FINITE — no wrap (the key contrast with the battle turn).** The
-  battle turn is a round-robin that wraps with `% length` (review-answer
-  `moveToNextTurn`); the defense queue does NOT. `nextDefensePresenter` returns
-  `order[idx + 1] ?? null`, so past the last presenter there is no next team —
-  and that `null` is exactly what drives the `finished` broadcast and the
-  PRESENTATION_DEFENSE → EVALUATION exit.
-- **StartDefense MOVES the stage (like CloseShop, unlike the 9.2 prep start).**
-  The room is parked in PRESENTATION_PREPARATION after preparation/upload;
-  StartDefense validates that stage, `transitionTo('PRESENTATION_DEFENSE')`,
-  points the room at the first presenter and persists with `rooms.update` — two
-  new STAGE_FLOW edges (PRESENTATION_PREPARATION → PRESENTATION_DEFENSE →
-  EVALUATION). The 9.2 `start-preparation` changed no room state; this one does.
-- **Host-paced, no timer.** Unlike the answer (§16.4), shop (§16.5) and
-  preparation (§16.6) timers, there is NO defense timer/registry — the host drives
-  the pace with `finish-presenter` / `skip-presenter`. No `ClockPort`, no
-  scheduler, no deadline.
-- **All public, room-wide, no client commands.** The defense order and progress
-  hide nothing (the deliberate opposite of the §16.5 QR secrecy), so every event
-  is room-audience with a public payload and 10.1 applies no team-gating. There is
-  no `client:defense:*` surface: the three mutations are REST host actions —
+- **Состояние защиты полностью ДЕРИВАЦИОННО — таблицы defense нет.** Текущий
+  выступающий — это `Room.currentTeamId` (тот же указатель, что использует боевой ход),
+  а порядок — это `turnOrder` участвующих команд по возрастанию (назначен на старте
+  игры, §14.5). 10.1 НЕ добавляет схему, НЕ добавляет in-memory реестр — состояние
+  живёт в существующих колонках и поэтому переживает рестарт процесса
+  (`db:generate` остаётся «No schema changes»). Публичный `GET defense/state`
+  пересчитывает его по запросу для переподключения/обновления.
+- **Очередь КОНЕЧНА — без зацикливания (ключевой контраст с боевым ходом).** Боевой
+  ход — это round-robin, который зацикливается через `% length` (review-answer
+  `moveToNextTurn`); очередь защиты — НЕТ. `nextDefensePresenter` возвращает
+  `order[idx + 1] ?? null`, так что за последним выступающим следующей команды нет —
+  и именно этот `null` управляет рассылкой `finished` и
+  выходом PRESENTATION_DEFENSE → EVALUATION.
+- **StartDefense ДВИГАЕТ стадию (как CloseShop, в отличие от старта подготовки в 9.2).**
+  Комната припаркована в PRESENTATION_PREPARATION после подготовки/загрузки;
+  StartDefense валидирует эту стадию, `transitionTo('PRESENTATION_DEFENSE')`,
+  наводит комнату на первого выступающего и персистит через `rooms.update` — два
+  новых ребра STAGE_FLOW (PRESENTATION_PREPARATION → PRESENTATION_DEFENSE →
+  EVALUATION). `start-preparation` из 9.2 не менял состояние комнаты; этот — меняет.
+- **Темп задаёт ведущий, без таймера.** В отличие от таймеров ответа (§16.4), магазина (§16.5) и
+  подготовки (§16.6), таймера/реестра defense НЕТ — ведущий задаёт
+  темп через `finish-presenter` / `skip-presenter`. Нет `ClockPort`, нет
+  планировщика, нет deadline.
+- **Всё публично, room-wide, без команд клиента.** Порядок и прогресс защиты
+  ничего не скрывают (намеренная противоположность секретности QR из §16.5), так что каждое событие
+  имеет аудиторию room с публичным payload, и 10.1 не применяет team-gating. Поверхности
+  `client:defense:*` нет: три мутации — это REST-действия ведущего —
   `POST rooms/:code/defense/{start,finish-presenter,skip-presenter}` (HostAuthGuard,
-  200) — and `GET rooms/:code/defense/state` is the open read.
-- **Emission order is fixed.** Start: `started` (the order) then `team-started`
-  (the first presenter). Each advance: `team-finished` / `team-skipped` (the
-  presenter leaving) first, then either `team-started` (the next presenter) or —
-  on the last one — `finished` (`nextStage` = EVALUATION). EVALUATION is parked
-  until Stage 10.2; the `EVALUATION → RESULTS → FINISHED` edges arrive with 10.3.
+  200) — а `GET rooms/:code/defense/state` — это открытое чтение.
+- **Порядок эмиссии фиксирован.** Старт: `started` (порядок), затем `team-started`
+  (первый выступающий). Каждое продвижение: `team-finished` / `team-skipped` (уходящий
+  выступающий) первым, затем либо `team-started` (следующий выступающий), либо —
+  на последнем — `finished` (`nextStage` = EVALUATION). EVALUATION припаркована
+  до Этапа 10.2; рёбра `EVALUATION → RESULTS → FINISHED` приходят с 10.3.
 
-### Evaluation — server broadcasts (§16.8)
+### Evaluation — серверные рассылки (§16.8)
 
-Catalog of the §16.8 "evaluation collection" broadcasts. The constants live in
-`src/game-session/application/events/evaluation-events.ts` (next to the
-game-session use cases that emit them, Design A — exactly as
-commerce/presentation/defense); the evaluation module itself emits nothing.
-**Sub-stage 10.2 emits all three** — SubmitEvaluation records a score,
-ConfirmEvaluation freezes it. Every row is **room-wide**, and — the defining
-rule here — **carries NO numeric score** (§16.8 "intrigue": the running tallies
-stay secret until results, 10.3). The **Status** column records each name's
-disposition.
+Каталог рассылок §16.8 «сбор оценивания». Константы лежат в
+`src/game-session/application/events/evaluation-events.ts` (рядом с
+use-case'ами game-session, которые их эмитируют, Design A — ровно как
+commerce/presentation/defense); сам модуль evaluation не эмитирует ничего.
+**Под-этап 10.2 эмитирует все три** — SubmitEvaluation записывает оценку,
+ConfirmEvaluation замораживает её. Каждая строка **room-wide**, и — определяющее
+правило здесь — **НЕ несёт числовой оценки** (§16.8 «интрига»: текущие подсчёты
+держатся в секрете до результатов, 10.3). Колонка **Status** фиксирует диспозицию
+каждого имени.
 
-| Canonical name | Direction | Area | Audience | Purpose | Plan ref | Status |
+| Каноническое имя | Направление | Область | Аудитория | Назначение | Ссылка на план | Status |
 |---|---|---|---|---|---|---|
-| `server:evaluation:score-submitted` | server | evaluation | room | A captain/host submitted (or re-submitted) one score | §16.8 | Emitted since 10.2 by SubmitEvaluationUseCase (captain `POST team` / host `POST host`), FIRST of the submit pair; payload `{ roomId, targetTeamId, evaluatorType, evaluatorTeamId, created }` — **no numeric score** (`evaluatorTeamId` null for a host) |
-| `server:evaluation:score-confirmed` | server | evaluation | room | A captain/host confirmed (froze) one score | §16.8 | Emitted since 10.2 by ConfirmEvaluationUseCase (`POST team/confirm` / `POST host/confirm`), FIRST of the confirm group — one per frozen row (per-target: exactly one; all-at-once: one per remaining draft); payload `{ roomId, targetTeamId, evaluatorType, evaluatorTeamId }` — **no numeric score** |
-| `server:evaluation:progress-updated` | server | evaluation | room | The running tally changed | §16.8 | Emitted since 10.2 by Submit (always) and Confirm (only when something was frozen), AFTER the score event(s); payload `{ roomId, team, host, totalExpected, complete }` where `team`/`host` are `{ submitted, confirmed, expected }` — **counts only** |
-| `server:evaluation:completed` | server | evaluation | room | The game finished (RESULTS, FINISHED) | §16.8 | Emitted since 10.3 by CalculateResultsUseCase (host `POST results`) AFTER the transaction commits, FIRST of the results pair; payload `{ roomId, stage, status }` (stage RESULTS, status FINISHED) |
-| `server:evaluation:results-calculated` | server | evaluation | room | The final leaderboard | §14.10 | Emitted since 10.3 by CalculateResultsUseCase AFTER commit, right after `completed`; payload `{ roomId, leaderboard }` where each entry is `{ teamId, teamName, earnedScore, presentationScoreRaw, latePenalty, presentationScoreFinal, finalScore, place }` — PUBLIC AGGREGATES (the individual `evaluation_scores` stay private) |
-| `server:evaluation:results-shown` | server | evaluation | room | UI cue to reveal results | §16.8 | **Reserved** — a presentation-layer cue with no server trigger; the leaderboard ships via `results-calculated` / `GET results` |
+| `server:evaluation:score-submitted` | server | evaluation | room | Капитан/ведущий отправил (или переотправил) одну оценку | §16.8 | Эмитируется с 10.2 из SubmitEvaluationUseCase (капитан `POST team` / ведущий `POST host`), ПЕРВЫМ в паре отправки; payload `{ roomId, targetTeamId, evaluatorType, evaluatorTeamId, created }` — **без числовой оценки** (`evaluatorTeamId` null для ведущего) |
+| `server:evaluation:score-confirmed` | server | evaluation | room | Капитан/ведущий подтвердил (заморозил) одну оценку | §16.8 | Эмитируется с 10.2 из ConfirmEvaluationUseCase (`POST team/confirm` / `POST host/confirm`), ПЕРВЫМ в группе подтверждения — по одному на замороженную строку (per-target: ровно одна; all-at-once: по одной на каждый оставшийся черновик); payload `{ roomId, targetTeamId, evaluatorType, evaluatorTeamId }` — **без числовой оценки** |
+| `server:evaluation:progress-updated` | server | evaluation | room | Текущий подсчёт изменился | §16.8 | Эмитируется с 10.2 из Submit (всегда) и Confirm (только когда что-то было заморожено), ПОСЛЕ события(й) оценки; payload `{ roomId, team, host, totalExpected, complete }`, где `team`/`host` — это `{ submitted, confirmed, expected }` — **только счётчики** |
+| `server:evaluation:completed` | server | evaluation | room | Игра завершена (RESULTS, FINISHED) | §16.8 | Эмитируется с 10.3 из CalculateResultsUseCase (ведущий `POST results`) ПОСЛЕ коммита транзакции, ПЕРВЫМ в паре результатов; payload `{ roomId, stage, status }` (stage RESULTS, status FINISHED) |
+| `server:evaluation:results-calculated` | server | evaluation | room | Финальная таблица лидеров | §14.10 | Эмитируется с 10.3 из CalculateResultsUseCase ПОСЛЕ commit, сразу после `completed`; payload `{ roomId, leaderboard }`, где каждая запись — это `{ teamId, teamName, earnedScore, presentationScoreRaw, latePenalty, presentationScoreFinal, finalScore, place }` — ПУБЛИЧНЫЕ АГРЕГАТЫ (отдельные `evaluation_scores` остаются приватными) |
+| `server:evaluation:results-shown` | server | evaluation | room | UI-сигнал показать результаты | §16.8 | **Зарезервировано** — сигнал слоя представления без серверного триггера; таблица лидеров поставляется через `results-calculated` / `GET results` |
 
-### Plan name → canonical name (§16.8)
+### Имя плана → каноническое имя (§16.8)
 
-Same derivation as §16.1–16.7: a plan token `x:y` becomes `server:evaluation:x-y`
-in kebab-case (camelCase split on case, e.g. `scoreSubmitted` → `score-submitted`).
+Тот же вывод, что в §16.1–16.7: токен плана `x:y` становится `server:evaluation:x-y`
+в kebab-case (camelCase разбивается по регистру, например `scoreSubmitted` → `score-submitted`).
 
-| Plan name (§16.8) | Canonical name |
+| Имя плана (§16.8) | Каноническое имя |
 |---|---|
 | `evaluation:scoreSubmitted` | `server:evaluation:score-submitted` |
 | `evaluation:scoreConfirmed` | `server:evaluation:score-confirmed` |
@@ -575,76 +574,76 @@ in kebab-case (camelCase split on case, e.g. `scoreSubmitted` → `score-submitt
 | `evaluation:completed` | `server:evaluation:completed` |
 | `evaluation:resultsCalculated` | `server:evaluation:results-calculated` |
 
-### Evaluation contract notes (§16.8)
+### Заметки по контракту Evaluation (§16.8)
 
-- **Numbers are PRIVATE until results (the §16.8 "intrigue").** No broadcast and
-  no progress payload carries a numeric score — only ids, the `created` flag, and
-  the `{ submitted, confirmed, expected }` counts. The author's OWN numbers come
-  back exclusively in their REST reply (`POST team`/`host` echoes the submitted
-  `EvaluationScore`); there is deliberately NO GET surface for another evaluator's
-  scores until Stage 10.3. `GET rooms/:code/evaluation/progress` is counts-only.
-- **No StartEvaluation, no `started` event.** The room AUTO-entered EVALUATION
-  when the last presenter's defense finished (10.1 `defense:finished`,
-  PRESENTATION_DEFENSE → EVALUATION), so 10.2 adds no start action and no
-  `started` broadcast (it would be additive later if ever needed).
-- **Evaluator never trusted from the body.** A TEAM vote's `evaluatorTeamId` is
-  derived from the acting captain's own team (captain-authz + a symmetric
-  cross-tenant guard); a HOST vote's identity from `room.hostId`. A team can never
-  score itself (`SelfEvaluationError` 403, before any write; the entity backstops
-  the same shape).
-- **Create-or-update + immutable confirm, under the per-room advisory lock** (the
-  FIRST statement of each transaction). Re-submitting an unconfirmed score
-  overwrites it; a confirmed score is frozen (`EvaluationAlreadyConfirmedError`
-  409). Confirm has TWO granularities: per-target (STRICT — 404 if no draft, 409
-  if already confirmed) and all-at-once (omit `targetTeamId` — freezes only the
-  evaluator's remaining drafts, skipping already-confirmed rows so a per-target
-  pass then an all-at-once finish never deadlocks; idempotent when nothing is
-  left). The insert's unique-index 23505 is a defensive net only.
-- **Emission order is fixed.** Submit: `score-submitted` then `progress-updated`.
-  Confirm: one `score-confirmed` per frozen row, then a single `progress-updated`
-  (skipped entirely when an all-at-once confirmed nothing). Results: `completed`
-  then `results-calculated`, BOTH emitted AFTER the transaction commits (⚠️D — the
-  §14.10 finish is irreversible and has no corrective event, so the broadcast must
-  never precede the durable write).
-- **All room-wide.** There is no `client:evaluation:*` surface: every mutation is a
-  REST action — `POST rooms/:code/evaluation/{team,host}`, `.../{team,host}/confirm`
-  and `.../results` (PlayerIdentityGuard / HostAuthGuard, 200) — and
-  `GET rooms/:code/evaluation/{criteria,teams,progress,results}` are the open reads.
-- **10.3 closes the backbone (EVALUATION → RESULTS, then FINISHED).**
-  CalculateResults adds the `EVALUATION: ['RESULTS']` STAGE_FLOW edge and, in ONE
-  transaction, `transitionTo('RESULTS')` then `markFinished` (status FINISHED).
-  RESULTS is TERMINAL — there is deliberately NO `RESULTS → FINISHED` *stage*
-  edge: FINISHED is the room STATUS, set by `markFinished`, not a stage. A repeat
-  call is out of stage (already past EVALUATION) → 409 (idempotency); a partial
-  tally is rejected by the completeness gate (`EvaluationNotCompleteError` 409)
-  unless `force` is set. The individual scores STAY private — `results-calculated`
-  / `GET results` expose only the per-team AGGREGATES.
+- **Числа ПРИВАТНЫ до результатов (§16.8 «интрига»).** Ни одна рассылка и
+  ни один payload прогресса не несёт числовой оценки — только id, флаг `created` и
+  счётчики `{ submitted, confirmed, expected }`. СОБСТВЕННЫЕ числа автора
+  возвращаются исключительно в его REST-ответе (`POST team`/`host` эхом отдаёт отправленный
+  `EvaluationScore`); поверхности GET для оценок другого оценивающего намеренно НЕТ
+  до Этапа 10.3. `GET rooms/:code/evaluation/progress` — только счётчики.
+- **Нет StartEvaluation, нет события `started`.** Комната АВТОМАТИЧЕСКИ вошла в EVALUATION,
+  когда завершилась защита последнего выступающего (10.1 `defense:finished`,
+  PRESENTATION_DEFENSE → EVALUATION), так что 10.2 не добавляет стартового действия и
+  рассылки `started` (она была бы аддитивной позже, если когда-либо понадобится).
+- **Оценивающему никогда не доверяют из тела.** `evaluatorTeamId` голоса TEAM
+  выводится из собственной команды действующего капитана (captain-авторизация + симметричный
+  cross-tenant guard); идентичность голоса HOST — из `room.hostId`. Команда никогда не может
+  оценить саму себя (`SelfEvaluationError` 403, до любой записи; entity подстраховывает
+  ту же форму).
+- **Create-or-update + неизменяемый confirm, под per-room advisory-локом** (ПЕРВЫМ
+  стейтментом каждой транзакции). Переотправка неподтверждённой оценки
+  перезаписывает её; подтверждённая оценка заморожена (`EvaluationAlreadyConfirmedError`
+  409). У Confirm ДВЕ гранулярности: per-target (СТРОГИЙ — 404 при отсутствии черновика, 409
+  при уже подтверждённой) и all-at-once (опустить `targetTeamId` — замораживает только
+  оставшиеся черновики оценивающего, пропуская уже-подтверждённые строки, так что per-target-проход,
+  а затем all-at-once-финиш никогда не дедлочат; идемпотентно, когда ничего не
+  осталось). 23505 уникального индекса вставки — лишь защитная сеть.
+- **Порядок эмиссии фиксирован.** Submit: `score-submitted`, затем `progress-updated`.
+  Confirm: по одному `score-confirmed` на замороженную строку, затем единственный `progress-updated`
+  (полностью пропускается, когда all-at-once ничего не подтвердил). Results: `completed`,
+  затем `results-calculated`, ОБА эмитируются ПОСЛЕ коммита транзакции (⚠️D —
+  финиш §14.10 необратим и не имеет корректирующего события, так что рассылка не должна
+  никогда предшествовать долговечной записи).
+- **Всё room-wide.** Поверхности `client:evaluation:*` нет: каждая мутация — это
+  REST-действие — `POST rooms/:code/evaluation/{team,host}`, `.../{team,host}/confirm`
+  и `.../results` (PlayerIdentityGuard / HostAuthGuard, 200) — а
+  `GET rooms/:code/evaluation/{criteria,teams,progress,results}` — это открытые чтения.
+- **10.3 закрывает backbone (EVALUATION → RESULTS, затем FINISHED).**
+  CalculateResults добавляет ребро STAGE_FLOW `EVALUATION: ['RESULTS']` и, в ОДНОЙ
+  транзакции, `transitionTo('RESULTS')`, затем `markFinished` (status FINISHED).
+  RESULTS ТЕРМИНАЛЬНА — намеренно НЕТ *стадийного* ребра `RESULTS → FINISHED`:
+  FINISHED — это СТАТУС комнаты, устанавливаемый `markFinished`, а не стадия. Повторный
+  вызов вне стадии (уже за EVALUATION) → 409 (идемпотентность); частичный
+  подсчёт отклоняется гейтом полноты (`EvaluationNotCompleteError` 409),
+  если не выставлен `force`. Отдельные оценки ОСТАЮТСЯ приватными — `results-calculated`
+  / `GET results` раскрывают только покомандные АГРЕГАТЫ.
 
-## Stage 5.2a — what ships now
+## Этап 5.2a — что поставляется сейчас
 
-Sub-stage 5.2a implements the lobby over **REST** and emits the room-wide
-broadcasts below from the use cases via `RealtimeEventsPort.emitToRoom`
-(audience: room). The constants live in
+Под-этап 5.2a реализует лобби поверх **REST** и эмитирует room-wide
+рассылки ниже из use-case'ов через `RealtimeEventsPort.emitToRoom`
+(аудитория: room). Константы лежат в
 `src/game-session/application/events/game-session-events.ts`.
 
-**Incoming `client:game-session:*` commands are deferred (forward-path).** In
-5.2a there are no WebSocket command handlers: every mutation (create/join room,
-team actions, profile, start, close, reconnect) is a REST call. The
-`client:game-session:*` rows above are the planned 5.2b WS forward-path and are
-not wired yet. Host/team/captain-scoped delivery, the originating-socket
-`room:state`/`error` snapshots, and the connection-lifecycle events
-(`connection:lost/restored`, `client/host:reconnected` over the socket) are also
-5.2b — 5.2a only emits room-wide.
+**Входящие команды `client:game-session:*` отложены (forward-path).** В
+5.2a нет обработчиков WebSocket-команд: каждая мутация (create/join room,
+действия с командой, профиль, start, close, reconnect) — это REST-вызов.
+Строки `client:game-session:*` выше — это запланированный WS forward-path 5.2b и
+ещё не подключены. Доставка с областью host/team/captain, снимки `room:state`/`error`
+для отправителя, и события жизненного цикла соединения
+(`connection:lost/restored`, `client/host:reconnected` по сокету) — тоже
+5.2b — 5.2a эмитирует только room-wide.
 
-### Room-wide event payloads (5.2a)
+### Payload'ы событий room-wide (5.2a)
 
-Shared projections (value objects unwrapped to primitives):
+Общие проекции (value-объекты развёрнуты в примитивы):
 
 - **RoomSummary** = `{ id, code, status, currentStage, currentTeamId }`
 - **PlayerSummary** = `{ id, roomId, teamId, name, avatar, isCaptain, connectionStatus }`
 - **TeamSummary** = `{ id, roomId, name, captainPlayerId, selectedTopicId, isReady, turnOrder }`
 
-| Canonical name | Payload |
+| Каноническое имя | Payload |
 |---|---|
 | `server:game-session:player-joined` | `{ roomId, player: PlayerSummary }` |
 | `server:game-session:player-profile-updated` | `{ roomId, player: PlayerSummary }` |
@@ -663,148 +662,148 @@ Shared projections (value objects unwrapped to primitives):
 | `server:game-session:game-turn-changed` | `{ roomId, currentTeamId }` |
 | `server:game-session:game-state-updated` | `{ roomId, room: RoomSummary, teams: TeamSummary[] }` |
 
-`game-can-start-changed` is a host-audience event in the catalog; in 5.2a it is
-broadcast room-wide (no socket presence yet) and clients may ignore it.
-`player-left` (room leave) is not emitted in 5.2a — leaving a *team* emits
+`game-can-start-changed` в каталоге — событие с аудиторией host; в 5.2a оно
+рассылается room-wide (присутствия сокетов ещё нет), и клиенты могут его игнорировать.
+`player-left` (выход из комнаты) в 5.2a не эмитируется — выход из *команды* эмитирует
 `team-updated`.
 
-## Stage 5.2b — WebSocket presence, reconnect & snapshot
+## Этап 5.2b — присутствие WebSocket, переподключение и снимок
 
-Sub-stage 5.2b adds the socket side of reconnect on top of 5.2a. **Game
-mutations stay REST** — there are still no incoming `client:game-session:*`
-command handlers (see _forward-path_ below). What 5.2b ships:
+Под-этап 5.2b добавляет сокетную сторону переподключения поверх 5.2a. **Игровые
+мутации остаются REST** — обработчиков входящих команд `client:game-session:*`
+по-прежнему нет (см. _forward-path_ ниже). Что поставляет 5.2b:
 
-- **Socket identity on the handshake.** A client opens the socket with
-  `auth.reconnectToken` (or `?reconnectToken=`). The `GameSessionGateway`
-  (`src/game-session/presentation/ws/`) resolves the principal — a player
-  (`Player.findByReconnectToken` → `{ roomId, playerId }`) or the host
-  (`Room.findByHostReconnectToken` → `{ roomId }`) — joins the socket to the
-  room group, registers presence, and runs the existing `ReconnectClient` use
-  case. A socket carrying **no** reconnect token (missing or empty) is **ignored**
-  by this gateway — it stays an anonymous transport socket served by the base
-  `RealtimeGateway` (it is never joined, never errored, never disconnected). Only
-  a **non-empty** token that fails to resolve gets a single `error` then a forced
-  disconnect.
-- **Presence registry.** An in-memory map of live sockets per identity
-  (multi-tab safe): a player is marked `DISCONNECTED` only when their **last**
-  socket drops. See _Presence model_ below.
-- **Originating-socket snapshot.** After a successful reconnect the gateway
-  sends `connection-restored` then the full `room-state` snapshot to **that
-  socket only** (`emitToClient`), while the room-wide `client-reconnected` /
-  `host-reconnected` broadcast is emitted by `ReconnectClient` (unchanged from
+- **Идентичность сокета на handshake.** Клиент открывает сокет с
+  `auth.reconnectToken` (или `?reconnectToken=`). `GameSessionGateway`
+  (`src/game-session/presentation/ws/`) разрешает принципала — игрока
+  (`Player.findByReconnectToken` → `{ roomId, playerId }`) или ведущего
+  (`Room.findByHostReconnectToken` → `{ roomId }`) — присоединяет сокет к
+  группе комнаты, регистрирует присутствие и запускает существующий use-case
+  `ReconnectClient`. Сокет, несущий **никакого** токена переподключения (отсутствует или пуст),
+  этот gateway **игнорирует** — он остаётся анонимным транспортным сокетом, обслуживаемым базовым
+  `RealtimeGateway` (его никогда не присоединяют, не ошибают, не отключают). Только
+  **непустой** токен, который не удаётся разрешить, получает один `error`, затем принудительное
+  отключение.
+- **Реестр присутствия.** In-memory карта живых сокетов на идентичность
+  (multi-tab безопасна): игрок помечается `DISCONNECTED`, только когда его **последний**
+  сокет отваливается. См. _Модель присутствия_ ниже.
+- **Снимок отправителю.** После успешного переподключения gateway
+  отправляет `connection-restored`, затем полный снимок `room-state` **только
+  этому сокету** (`emitToClient`), тогда как room-wide рассылка `client-reconnected` /
+  `host-reconnected` эмитируется `ReconnectClient` (без изменений с
   5.2a).
 
-### Two gateways, one Socket.IO server
+### Два gateway, один Socket.IO-сервер
 
-`GameSessionGateway` is a second `@WebSocketGateway()` (no namespace) that
-attaches to the **same** Socket.IO server as the transport-only
-`RealtimeGateway`. It never injects `@WebSocketServer()`: it groups sockets with
-`client.join(roomId)` and publishes through `RealtimeEventsPort`
-(`emitToClient` / `emitToRoom`), so the application layer stays transport-free.
-The base `RealtimeGateway` remains pure transport.
+`GameSessionGateway` — это второй `@WebSocketGateway()` (без namespace), который
+подключается к **тому же** Socket.IO-серверу, что и транспортный-только
+`RealtimeGateway`. Он никогда не инжектит `@WebSocketServer()`: он группирует сокеты через
+`client.join(roomId)` и публикует через `RealtimeEventsPort`
+(`emitToClient` / `emitToRoom`), так что слой приложения остаётся свободным от транспорта.
+Базовый `RealtimeGateway` остаётся чистым транспортом.
 
-### Who emits what
+### Кто что эмитирует
 
-| Scope | Emitter | Via |
+| Область | Эмиттер | Через |
 |---|---|---|
-| room-wide lobby/game broadcasts | use cases (5.2a, unchanged) | `emitToRoom` |
-| `client-reconnected` / `host-reconnected` (room) | `ReconnectClient` (unchanged) | `emitToRoom` |
+| room-wide рассылки лобби/игры | use-case'ы (5.2a, без изменений) | `emitToRoom` |
+| `client-reconnected` / `host-reconnected` (room) | `ReconnectClient` (без изменений) | `emitToRoom` |
 | `connection-lost` (room) | `MarkClientDisconnectedUseCase` | `emitToRoom` |
-| `connection-restored`, `room-state`, `error` (originating) | `GameSessionGateway` | `emitToClient(client.id, …)` |
+| `connection-restored`, `room-state`, `error` (отправителю) | `GameSessionGateway` | `emitToClient(client.id, …)` |
 
-### Originating-socket & connection payloads (5.2b)
+### Payload'ы отправителя и соединения (5.2b)
 
-`RoomStateResponseDto` is the same shape the REST room-state endpoints return
+`RoomStateResponseDto` — та же форма, что возвращают REST-эндпоинты room-state
 (`{ room, players[], teams[] }`).
 
-| Canonical name | Area | Audience | Payload |
+| Каноническое имя | Область | Аудитория | Payload |
 |---|---|---|---|
 | `server:realtime:connection-lost` | realtime | room | `{ roomId, playerId }` |
-| `server:realtime:connection-restored` | realtime | originating | `{ roomId, playerId: string \| null }` (`null` for the host) |
-| `server:game-session:room-state` | game-session | originating | `RoomStateResponseDto` |
-| `server:game-session:error` | game-session | originating | `{ code, message }` (an `AppError`, e.g. `INVALID_RECONNECT_TOKEN`) |
-| `server:realtime:error` | realtime | originating | `{ code: 'INTERNAL_ERROR', message: 'Internal error' }` (non-`AppError`, secret-free) |
+| `server:realtime:connection-restored` | realtime | отправителю | `{ roomId, playerId: string \| null }` (`null` для ведущего) |
+| `server:game-session:room-state` | game-session | отправителю | `RoomStateResponseDto` |
+| `server:game-session:error` | game-session | отправителю | `{ code, message }` (это `AppError`, например `INVALID_RECONNECT_TOKEN`) |
+| `server:realtime:error` | realtime | отправителю | `{ code: 'INTERNAL_ERROR', message: 'Internal error' }` (не-`AppError`, без секретов) |
 
-`client-reconnected` `{ roomId, player: PlayerSummary }` and `host-reconnected`
-`{ roomId, hostId }` keep their 5.2a shape and room audience.
+`client-reconnected` `{ roomId, player: PlayerSummary }` и `host-reconnected`
+`{ roomId, hostId }` сохраняют свою форму 5.2a и аудиторию room.
 
-### Reconnect flow (handshake)
+### Поток переподключения (handshake)
 
-1. Read `auth.reconnectToken`/query (local `readReconnectToken` copy in
-   `presentation/ws/handshake.ts`; the base gateway is untouched). **No token
-   (missing or empty) → return immediately:** the socket is left untouched as an
-   anonymous transport socket for the base `RealtimeGateway` (no join, no
-   presence, no `error`, no disconnect).
-2. Resolve the principal for the non-empty token. Player → `{ roomId, playerId }`;
-   host → `{ roomId }`. A token that does **not** resolve (unknown / malformed /
-   expired) → `emitToClient(server:game-session:error, { code:
-   'INVALID_RECONNECT_TOKEN' })` then `client.disconnect(true)`.
-3. `client.join(roomId)`; register the socket in the presence registry.
-4. `ReconnectClient.execute({ roomId, principalHint, playerId? })` — the player
-   branch marks the player `CONNECTED` and broadcasts `client-reconnected`
-   room-wide; the host branch broadcasts `host-reconnected`. It **returns** the
-   room snapshot.
-5. The gateway sends `connection-restored` then `room-state` to the originating
-   socket from the returned snapshot.
+1. Прочитать `auth.reconnectToken`/query (локальная копия `readReconnectToken` в
+   `presentation/ws/handshake.ts`; базовый gateway не тронут). **Нет токена
+   (отсутствует или пуст) → немедленный возврат:** сокет оставляется нетронутым как
+   анонимный транспортный сокет для базового `RealtimeGateway` (без join, без
+   присутствия, без `error`, без отключения).
+2. Разрешить принципала для непустого токена. Игрок → `{ roomId, playerId }`;
+   ведущий → `{ roomId }`. Токен, который **не** разрешается (неизвестный / некорректный /
+   просрочен) → `emitToClient(server:game-session:error, { code:
+   'INVALID_RECONNECT_TOKEN' })`, затем `client.disconnect(true)`.
+3. `client.join(roomId)`; зарегистрировать сокет в реестре присутствия.
+4. `ReconnectClient.execute({ roomId, principalHint, playerId? })` — ветка игрока
+   помечает игрока `CONNECTED` и рассылает `client-reconnected`
+   room-wide; ветка ведущего рассылает `host-reconnected`. Он **возвращает**
+   снимок комнаты.
+5. Gateway отправляет `connection-restored`, затем `room-state` отправителю
+   из возвращённого снимка.
 
-`handleConnection` is `async` and Nest does not await it, so its whole body runs
-in `try/catch`: a thrown `AppError` becomes a `game-session:error`, anything
-else a secret-free `realtime:error`.
+`handleConnection` — `async`, и Nest его не await'ит, так что всё его тело выполняется
+в `try/catch`: брошенный `AppError` становится `game-session:error`, что-либо
+иное — `realtime:error` без секретов.
 
-### Disconnect
+### Отключение
 
-On `handleDisconnect` the gateway unregisters the socket from presence:
+На `handleDisconnect` gateway снимает сокет с регистрации присутствия:
 
-- **Host** — cleanup only. No event; the room stays alive (plan §14.1).
-- **Player, last socket of that identity** — `MarkClientDisconnectedUseCase`
-  marks the player `DISCONNECTED` and broadcasts `connection-lost` room-wide.
-- **Player, another socket still open** — cleanup only (multi-tab).
+- **Ведущий** — только очистка. Без события; комната остаётся живой (план §14.1).
+- **Игрок, последний сокет этой идентичности** — `MarkClientDisconnectedUseCase`
+  помечает игрока `DISCONNECTED` и рассылает `connection-lost` room-wide.
+- **Игрок, другой сокет ещё открыт** — только очистка (multi-tab).
 
-### Presence model
+### Модель присутствия
 
-The registry holds a forward map `socketId → entry` and a reverse map
-`identityKey → Set<socketId>` (`identityKey`: player `p:<playerId>`, host
-`h:<roomId>`). `markDisconnected` fires only when the **last** socket of an
-identity leaves. It is **in-memory, per process** — correct for the single-node
-MVP. Multi-node presence (a shared store / the Socket.IO Redis adapter) is
-out of scope and deferred.
+Реестр держит прямую карту `socketId → entry` и обратную карту
+`identityKey → Set<socketId>` (`identityKey`: игрок `p:<playerId>`, ведущий
+`h:<roomId>`). `markDisconnected` срабатывает, только когда уходит **последний** сокет
+идентичности. Она **in-memory, на процесс** — корректно для single-node
+MVP. Multi-node присутствие (общее хранилище / Redis-адаптер Socket.IO) —
+вне scope и отложено.
 
-### Deliberate omissions (5.2b)
+### Намеренные пропуски (5.2b)
 
-- **Forward-path `client:game-session:*` commands are not implemented.** Every
-  game mutation stays REST; the command rows above remain the planned WS
+- **Forward-path команды `client:game-session:*` не реализованы.** Каждая
+  игровая мутация остаётся REST; строки команд выше остаются запланированным WS
   forward-path.
-- **No host-disconnect event.** A host dropping is cleanup-only by design
-  (§14.1) — the room must outlive a host reload.
-- **No token TTL.** An expired token is simply "not found" and takes the same
-  invalid-token path; TTL enforcement is post-MVP.
-- **`game:canStartChanged` stays room-wide.** The host-socket mechanism now
-  exists (`HostRealtimeEventsPort.emitToHost`, Stage 6.2b below), but narrowing
-  this lobby event to the host audience remains deferred.
+- **Нет события отключения ведущего.** Отпадение ведущего по дизайну — только очистка
+  (§14.1) — комната должна пережить перезагрузку ведущего.
+- **Нет TTL токена.** Просроченный токен просто «не найден» и идёт тем же
+  путём невалидного токена; принуждение TTL — post-MVP.
+- **`game:canStartChanged` остаётся room-wide.** Механизм host-сокета теперь
+  существует (`HostRealtimeEventsPort.emitToHost`, Этап 6.2b ниже), но сужение
+  этого события лобби до аудитории host остаётся отложенным.
 
-## Stage 6.2b — host-socket delivery
+## Этап 6.2b — доставка на host-сокет
 
-Sub-stage 6.2b implements the **host audience** for the two §16.4 host rows:
-`cell-selection-requested` (now host-only, no longer room-wide) and
-`question-correct-answer-shown-to-host` (new emission). The battle use cases
-publish them through a dedicated application port,
+Под-этап 6.2b реализует **аудиторию host** для двух host-строк §16.4:
+`cell-selection-requested` (теперь host-only, больше не room-wide) и
+`question-correct-answer-shown-to-host` (новая эмиссия). Боевые use-case'ы
+публикуют их через выделенный порт приложения,
 `HostRealtimeEventsPort.emitToHost(roomId, event, payload)`
-(`src/game-session/application/ports/`); the core `RealtimeEventsPort` is
-untouched.
+(`src/game-session/application/ports/`); core-порт `RealtimeEventsPort`
+не тронут.
 
-- **Mechanism: presence reverse-lookup, not a transport group.** The
-  `PresenceHostRealtimeEventsAdapter` (`presentation/ws/`) resolves the host's
-  live sockets via the 5.2b presence registry (`h:<roomId>` identity, every
-  open host tab) and emits to each with `emitToClient`. A Socket.IO "host
-  group" was deliberately rejected: the base gateway's public
-  `client:realtime:join-room` would let any socket join it and read host
-  secrets.
-- **Reveal gating.** `question-correct-answer-shown-to-host`
-  (`{ roomId, cellId, correctAnswer }`) is emitted by ReviewAnswer **only when
-  the request carries `revealAnswer: true`**. It is an addition to REST —
-  `current/host` / `current/answer` (HostAuthGuard) remain the source of
-  truth; the room-wide payloads still never contain `correctAnswer`.
-- **No-op without host sockets.** With no live host socket the emission simply
-  addresses nobody; the REST mutation succeeds unchanged.
-- **Single-node.** Presence is in-memory per process (see _Presence model_
-  above), so host delivery shares the same single-node MVP scope.
+- **Механизм: обратный поиск присутствия, а не транспортная группа.**
+  `PresenceHostRealtimeEventsAdapter` (`presentation/ws/`) разрешает живые сокеты
+  ведущего через реестр присутствия 5.2b (идентичность `h:<roomId>`, каждая
+  открытая вкладка ведущего) и эмитирует каждому через `emitToClient`. «Группа host»
+  Socket.IO была намеренно отвергнута: публичный `client:realtime:join-room`
+  базового gateway позволил бы любому сокету присоединиться к ней и прочитать
+  секреты ведущего.
+- **Гейтинг раскрытия.** `question-correct-answer-shown-to-host`
+  (`{ roomId, cellId, correctAnswer }`) эмитируется ReviewAnswer **только когда
+  запрос несёт `revealAnswer: true`**. Это дополнение к REST —
+  `current/host` / `current/answer` (HostAuthGuard) остаются источником
+  истины; room-wide payload'ы по-прежнему никогда не содержат `correctAnswer`.
+- **No-op без host-сокетов.** При отсутствии живого host-сокета эмиссия просто
+  не адресована никому; REST-мутация успешно проходит без изменений.
+- **Single-node.** Присутствие — in-memory на процесс (см. _Модель присутствия_
+  выше), так что доставка host разделяет тот же single-node MVP scope.

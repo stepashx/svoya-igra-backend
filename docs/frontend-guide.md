@@ -1,76 +1,76 @@
-# Frontend Integration Guide
+# Руководство по интеграции фронтенда
 
-A prose guide for wiring a frontend to this backend. It is the **stitching
-layer**: it explains how the three surfaces fit together — authentication, the
-WebSocket connection, the stage machine, and the end-to-end play scenarios — so
-that a frontend developer does not drown when connecting the pieces.
+Прозовый гайд по подключению frontend к этому backend. Это **сшивающий
+слой**: он объясняет, как три поверхности складываются вместе —
+аутентификация, WebSocket-подключение, машина стадий и сквозные игровые
+сценарии — чтобы frontend-разработчик не утонул при соединении частей.
 
-It deliberately does **not** re-document individual REST endpoints or the full
-realtime event catalog. Those have a single source of truth each (see below);
-this guide links to them rather than copying them.
+Он намеренно **не** переописывает отдельные REST-эндпоинты и полный
+каталог realtime-событий. У каждого из них есть свой единственный источник
+истины (см. ниже); этот гайд ссылается на них, а не копирует их.
 
 ---
 
-## §0 · Table of contents & how to read this
+## §0 · Оглавление и как это читать
 
-1. [§1 Introduction & quick start](#1--introduction--quick-start)
-2. [§2 Authentication](#2--authentication) ⭐
-3. [§3 Stages](#3--stages) ⭐
-4. [§4 Scenarios](#4--scenarios-rest--ws-end-to-end) ⭐
+1. [§1 Введение и быстрый старт](#1--введение-и-быстрый-старт)
+2. [§2 Аутентификация](#2--аутентификация) ⭐
+3. [§3 Стадии](#3--стадии) ⭐
+4. [§4 Сценарии](#4--сценарии-rest--ws-сквозные) ⭐
 5. [§5 WebSocket](#5--websocket)
-6. [§6 Files](#6--files)
+6. [§6 Файлы](#6--файлы)
 
-**Three documents, three jobs — read them together:**
+**Три документа, три задачи — читайте их вместе:**
 
-| Document | Covers | Use it for |
+| Документ | Что покрывает | Для чего использовать |
 |---|---|---|
-| **Swagger UI** (`/docs`) | The REST surface — every path, verb, body, response DTO, status codes | "What do I call, with what body, and what comes back?" |
-| **`realtime-events.md`** | The WebSocket event catalog — every event name, direction, area, audience, and payload | "What event fires, who receives it, and what's in it?" |
-| **This file** | The connection between them | "In what order do I call things, what auth do I attach, and what do I render per stage?" |
+| **Swagger UI** (`/docs`) | REST-поверхность — каждый путь, метод, тело, response DTO, коды статусов | «Что я вызываю, с каким телом и что приходит назад?» |
+| **`realtime-events.md`** | Каталог WebSocket-событий — каждое имя события, направление, область, аудитория и payload | «Какое событие срабатывает, кто его получает и что в нём?» |
+| **Этот файл** | Связь между ними | «В каком порядке я вызываю вещи, какой auth прикрепляю и что отрисовываю на каждой стадии?» |
 
-This guide **never duplicates** the endpoint list or the event catalog — it
-**stitches** them: it tells you *which* call triggers *which* events, *who*
-receives them, and *what* the client should do next. When you need the exact
-request body or the exact payload shape, follow the link to Swagger or
+Этот гайд **никогда не дублирует** список эндпоинтов и каталог событий — он
+**сшивает** их: он говорит вам, *какой* вызов триггерит *какие* события, *кто*
+их получает и *что* клиенту делать дальше. Когда вам нужно точное тело
+запроса или точная форма payload, перейдите по ссылке на Swagger или
 `realtime-events.md`.
 
 ---
 
-## §1 · Introduction & quick start
+## §1 · Введение и быстрый старт
 
-### What this is
+### Что это такое
 
-A **wiring** guide, not a reference. It assumes you will keep Swagger (`/docs`)
-and `realtime-events.md` open alongside it. Its job is to remove the "how do all
-these pieces connect?" friction.
+Гайд по **подключению**, не справочник. Он предполагает, что вы держите Swagger (`/docs`)
+и `realtime-events.md` открытыми рядом. Его задача — убрать трение «как все
+эти части соединяются?».
 
-### Three surfaces, one process
+### Три поверхности, один процесс
 
-The backend is a **single process on one origin and port** (default `:3000`).
-REST and WebSocket share it.
+Backend — это **единственный процесс на одном origin и порту** (по умолчанию `:3000`).
+REST и WebSocket разделяют его.
 
-| Surface | Base | Notes |
+| Поверхность | База | Заметки |
 |---|---|---|
-| REST API | `/api` | ⚠️ Every REST route is under the `/api` prefix (also reflected in the OpenAPI `paths`). |
-| Swagger UI | `/docs` | Interactive REST reference; "Try it out" targets the `/api` base. |
-| WebSocket | `/socket.io` | Socket.IO transport. One server, shared with REST. |
+| REST API | `/api` | ⚠️ Каждый REST-маршрут находится под префиксом `/api` (это также отражено в OpenAPI `paths`). |
+| Swagger UI | `/docs` | Интерактивный REST-справочник; «Try it out» нацелен на базу `/api`. |
+| WebSocket | `/socket.io` | Транспорт Socket.IO. Один сервер, общий с REST. |
 
-### CORS & environment
+### CORS и окружение
 
-Two independent origins, both defaulting to `*` in dev:
+Два независимых origin, оба по умолчанию `*` в dev:
 
-| Variable | Default (dev) | Governs |
+| Переменная | По умолчанию (dev) | Чем управляет |
 |---|---|---|
-| `FRONTEND_ORIGIN` | `*` | CORS for the REST API. |
-| `WS_CORS_ORIGIN` | `*` | CORS for the WebSocket. |
-| `WS_PATH` | `/socket.io` | The Socket.IO path the client must match. |
+| `FRONTEND_ORIGIN` | `*` | CORS для REST API. |
+| `WS_CORS_ORIGIN` | `*` | CORS для WebSocket. |
+| `WS_PATH` | `/socket.io` | Путь Socket.IO, который должен совпасть у клиента. |
 
-Lock both origins down to your real frontend host before any shared/public
-deployment.
+Заприте оба origin на ваш реальный frontend-хост перед любым
+общим/публичным развёртыванием.
 
-### Error envelope
+### Конверт ошибки
 
-Every REST error (and the WS domain/transport error events) shares one shape:
+Каждая REST-ошибка (и WS-события domain/transport ошибок) разделяют одну форму:
 
 ```json
 {
@@ -80,545 +80,544 @@ Every REST error (and the WS domain/transport error events) shares one shape:
 }
 ```
 
-`error.code` is a stable machine string; `error.message` is human text;
-`error.details` is optional. The exact HTTP status per endpoint is in **Swagger**
-— this guide and `realtime-events.md` describe *behaviour*, Swagger describes
-*status codes*.
+`error.code` — стабильная машинная строка; `error.message` — человеческий текст;
+`error.details` опционально. Точный HTTP-статус каждого эндпоинта есть в **Swagger**
+— этот гайд и `realtime-events.md` описывают *поведение*, Swagger описывает
+*коды статусов*.
 
-### 5-minute quick start
+### Быстрый старт за 5 минут
 
-1. **Create a room** — `POST /api/rooms`. The reply carries `hostReconnectToken`.
-   (A player instead does `POST /api/rooms/:code/players` and gets a
-   `reconnectToken`.) → [§2.1](#21--the-two-tokens)
-2. **Save the token.** It is issued **once** and never re-sent. Lose it and you
-   lose your identity. → [§2.2](#22--tokens-are-issued-once--save-them)
-3. **Open the socket** with the token in `auth.reconnectToken`. On success the
-   backend auto-joins your room and pushes a state snapshot. → [§5.1](#51--connecting)
-4. **Listen by area.** Subscribe to the event areas you render
-   (lobby/gameplay/commerce/…). → [§5.4](#54--the-eight-event-areas-overview)
-5. **Render by stage.** Drive your UI off `room.currentStage` and the
-   `game-stage-changed` push. → [§3](#3--stages)
+1. **Создайте комнату** — `POST /api/rooms`. Ответ несёт `hostReconnectToken`.
+   (Игрок вместо этого делает `POST /api/rooms/:code/players` и получает
+   `reconnectToken`.) → [§2.1](#21--два-токена)
+2. **Сохраните токен.** Он выдаётся **один раз** и никогда не отправляется повторно. Потеряете его — потеряете
+   свою идентичность. → [§2.2](#22--токены-выдаются-один-раз--сохраните-их)
+3. **Откройте сокет** с токеном в `auth.reconnectToken`. При успехе
+   backend автоматически присоединяет вас к комнате и пушит снимок состояния. → [§5.1](#51--подключение)
+4. **Слушайте по областям.** Подпишитесь на области событий, которые вы отрисовываете
+   (lobby/gameplay/commerce/…). → [§5.4](#54--восемь-областей-событий-обзор)
+5. **Отрисовывайте по стадии.** Управляйте вашим UI от `room.currentStage` и
+   push'а `game-stage-changed`. → [§3](#3--стадии)
 
-Everything below expands these five steps.
+Всё ниже раскрывает эти пять шагов.
 
 ---
 
-## §2 · Authentication
+## §2 · Аутентификация
 
-Authentication is **opaque-token based**. There is no login, no JWT, no session
-cookie. Two tokens exist, and the entire identity model hangs off them.
+Аутентификация **основана на opaque-токене**. Нет логина, нет JWT, нет
+session-cookie. Существуют два токена, и вся модель идентичности держится на них.
 
-### §2.1 · The two tokens
+### §2.1 · Два токена
 
-| | Host token | Player token |
+| | Токен ведущего | Токен игрока |
 |---|---|---|
-| Issued by | `POST /api/rooms` | `POST /api/rooms/:code/players` |
-| Response field | `hostReconnectToken` | `reconnectToken` |
-| REST header | `X-Host-Token` | `X-Player-Token` |
-| WS handshake | `auth.reconnectToken` | `auth.reconnectToken` |
-| Form | Opaque random string (32 bytes, base64url) — **not** a JWT, nothing to decode | same |
+| Кем выдан | `POST /api/rooms` | `POST /api/rooms/:code/players` |
+| Поле ответа | `hostReconnectToken` | `reconnectToken` |
+| REST-заголовок | `X-Host-Token` | `X-Player-Token` |
+| WS-рукопожатие | `auth.reconnectToken` | `auth.reconnectToken` |
+| Форма | Opaque случайная строка (32 байта, base64url) — **не** JWT, нечего декодировать | то же |
 
-Both tokens are the credential **and** the identity: the backend resolves *who
-you are* by looking the token up, not by parsing it.
+Оба токена — это и credential, **и** идентичность: backend разрешает, *кто
+вы*, через поиск токена, а не его разбор.
 
-### §2.2 · Tokens are issued ONCE — save them
+### §2.2 · Токены выдаются ОДИН РАЗ — сохраните их
 
-> **The token is returned exactly once, in the body of the create/join call. It
-> is never re-issued.** The public read DTOs (`RoomResponseDto`,
-> `PlayerResponseDto`) deliberately **strip** it, and the reconnect endpoints
-> return a room snapshot **without** a fresh token. **If the client loses the
-> token, that identity is gone** — there is no recovery endpoint.
+> **Токен возвращается ровно один раз, в теле вызова создания/входа. Он
+> никогда не выдаётся повторно.** Публичные read-DTO (`RoomResponseDto`,
+> `PlayerResponseDto`) намеренно **вырезают** его, а эндпоинты переподключения
+> возвращают снимок комнаты **без** свежего токена. **Если клиент теряет
+> токен, эта идентичность потеряна** — эндпоинта восстановления нет.
 
-Persist it immediately (e.g. `localStorage`) the moment you read the create/join
-response. This is the single most common integration mistake; treat the token
-like a password you can never reset.
+Сохраните его немедленно (например, в `localStorage`) в тот момент, когда
+читаете ответ создания/входа. Это самая частая ошибка интеграции; обращайтесь
+с токеном как с паролем, который вы никогда не сможете сбросить.
 
-### §2.3 · Transport — how the token rides each call
+### §2.3 · Транспорт — как токен едет в каждом вызове
 
-- **REST:** attach the header on every **guarded** route (the host actions, the
-  player actions). Open reads (board, topics, public lists) need no header.
+- **REST:** прикрепляйте заголовок к каждому **guarded**-маршруту (действия ведущего,
+  действия игрока). Открытым чтениям (поле, темы, публичные списки) заголовок не нужен.
 
   ```js
-  // Host-guarded REST call — attach X-Host-Token.
+  // REST-вызов под защитой ведущего — прикрепите X-Host-Token.
   await fetch(`${BASE}/api/rooms/${code}/game/start`, {
     method: 'POST',
     headers: { 'X-Host-Token': hostReconnectToken },
   });
-  // A player-guarded call attaches { 'X-Player-Token': reconnectToken } instead.
+  // Вызов под защитой игрока прикрепляет { 'X-Player-Token': reconnectToken } вместо этого.
   ```
 
-- **WebSocket:** the token rides the handshake `auth.reconnectToken` (see
-  [§5.1](#51--connecting)). You do not send it per-event.
+- **WebSocket:** токен едет в рукопожатии `auth.reconnectToken` (см.
+  [§5.1](#51--подключение)). Вы не отправляете его на каждое событие.
 
-### §2.4 · Reconnect
+### §2.4 · Переподключение
 
-Reconnect re-attaches your existing identity; it never mints a new one — the
-**same token is reused**.
+Переподключение заново прикрепляет вашу существующую идентичность; оно никогда не создаёт новую —
+**переиспользуется тот же токен**.
 
-- **HTTP reconnect** — `POST /api/rooms/:code/players/reconnect`
-  (`X-Player-Token`) or `POST /api/rooms/:code/host/reconnect` (`X-Host-Token`).
-  Both return a `RoomStateResponseDto` snapshot (`{ room, players[], teams[] }`)
-  and **no** new token. One use case (`ReconnectClient`) backs both the HTTP and
-  the WS paths.
-- **WebSocket reconnect** — just open the socket with the token; the backend
-  resolves you, joins your room, and replays the snapshot (see
-  [§5.1](#51--connecting) / [§2.8](#28--invalid_reconnect_token)).
+- **HTTP-переподключение** — `POST /api/rooms/:code/players/reconnect`
+  (`X-Player-Token`) или `POST /api/rooms/:code/host/reconnect` (`X-Host-Token`).
+  Оба возвращают снимок `RoomStateResponseDto` (`{ room, players[], teams[] }`)
+  и **никакого** нового токена. Один use-case (`ReconnectClient`) обслуживает и HTTP-,
+  и WS-пути.
+- **WebSocket-переподключение** — просто откройте сокет с токеном; backend
+  разрешает вас, присоединяет к комнате и проигрывает снимок заново (см.
+  [§5.1](#51--подключение) / [§2.8](#28--invalid_reconnect_token)).
 
-### §2.5 · The anonymous socket (spectator)
+### §2.5 · Анонимный сокет (зритель)
 
-> A socket opened **without** a token is **not** an automatic spectator. It stays
-> ungrouped — it sees **nothing**.
+> Сокет, открытый **без** токена, **не** является автоматическим зрителем. Он остаётся
+> несгруппированным — он видит **ничего**.
 
-To watch a room, an anonymous socket **must explicitly** join with the
-`client:realtime:join-room` command. That command is **not validated** — any
-socket may join any room id. This is exactly *why* secrets are never broadcast
-room-wide: the room channel is not a trust boundary (see
-[§5.2](#52--audiences) and [§6](#6--files)). Host-only and team-only deliveries
-do not ride the room channel for this reason.
+Чтобы наблюдать комнату, анонимный сокет **должен явно** присоединиться командой
+`client:realtime:join-room`. Эта команда **не валидируется** — любой
+сокет может присоединиться к любому id комнаты. Это ровно *почему* секреты никогда не рассылаются
+всем в комнате: канал комнаты не является границей доверия (см.
+[§5.2](#52--аудитории) и [§6](#6--файлы)). Доставки только ведущему и только команде
+не едут по каналу комнаты по этой причине.
 
-### §2.6 · 401 vs 403 — who gets what
+### §2.6 · 401 против 403 — кто что получает
 
-| Situation | Status |
+| Ситуация | Статус |
 |---|---|
-| Player route, missing / malformed / unknown player token | **401** |
-| Player route, valid token but **wrong room** or **wrong team** | **403** |
-| Host route, **any** auth problem (missing / wrong token) | **403** (host routes never return 401) |
-| Malformed room code (fails validation) | **400** |
-| Well-formed but unknown room code | **404** |
+| Маршрут игрока, отсутствующий / некорректный / неизвестный токен игрока | **401** |
+| Маршрут игрока, валидный токен, но **не та комната** или **не та команда** | **403** |
+| Маршрут ведущего, **любая** проблема auth (отсутствующий / неверный токен) | **403** (маршруты ведущего никогда не возвращают 401) |
+| Некорректный код комнаты (не проходит валидацию) | **400** |
+| Корректный, но неизвестный код комнаты | **404** |
 
-The asymmetry is intentional: a player is *authenticated then authorised* (so
-authn failures are 401, authz failures 403); a host is judged purely on the host
-token, so every host-auth failure is a 403.
+Асимметрия намеренна: игрок *сначала аутентифицируется, потом авторизуется* (поэтому
+сбои authn — это 401, сбои authz — 403); ведущий судится чисто по токену
+ведущего, поэтому любой сбой auth ведущего — это 403.
 
-### §2.7 · The three guards
+### §2.7 · Три guard-компонента
 
-| Guard | Used by | Behaviour |
+| Guard | Кем используется | Поведение |
 |---|---|---|
-| `HostAuthGuard` | host actions | `X-Host-Token` must equal the room's host token. |
-| `PlayerIdentityGuard` | player actions | Coarse **authentication** only — resolves the player from `X-Player-Token` and checks room membership. Fine-grained **authorisation** (is this player the captain? the active team?) lives **in the use case**, not the guard — so a non-captain passes the guard and is rejected by the domain. |
-| `TeamMemberOrHostGuard` | team inventory reads | **Either/or.** A *present* `X-Host-Token` commits you to the host path (validated strictly, no silent downgrade); otherwise the `X-Player-Token` must belong to a player of **this** room **and** the `:teamId` in the path. |
+| `HostAuthGuard` | действия ведущего | `X-Host-Token` должен равняться токену ведущего комнаты. |
+| `PlayerIdentityGuard` | действия игрока | Только грубая **аутентификация** — разрешает игрока из `X-Player-Token` и проверяет членство в комнате. Тонкая **авторизация** (этот игрок капитан? активная команда?) живёт **в use-case**, не в guard — поэтому не-капитан проходит guard и отклоняется доменом. |
+| `TeamMemberOrHostGuard` | чтения инвентаря команды | **Либо/либо.** *Присутствующий* `X-Host-Token` обязывает вас к пути ведущего (валидируется строго, без молчаливого понижения); иначе `X-Player-Token` должен принадлежать игроку **этой** комнаты **и** `:teamId` в пути. |
 
 ### §2.8 · `INVALID_RECONNECT_TOKEN`
 
-On the WS handshake the backend distinguishes two cases:
+При WS-рукопожатии backend различает два случая:
 
-- **No token (missing or empty string):** the socket is silently left as an
-  anonymous transport socket. No error, no disconnect. (It can still
-  `join-room`; see [§2.5](#25--the-anonymous-socket-spectator).)
-- **A non-empty token that fails to resolve:** the backend emits a single
-  `server:game-session:error` with `code: 'INVALID_RECONNECT_TOKEN'` and then
-  **force-disconnects** the socket.
+- **Нет токена (отсутствует или пустая строка):** сокет молча оставляется как
+  анонимный транспортный сокет. Без ошибки, без отключения. (Он всё ещё может
+  `join-room`; см. [§2.5](#25--анонимный-сокет-зритель).)
+- **Непустой токен, который не разрешается:** backend эмитирует один
+  `server:game-session:error` с `code: 'INVALID_RECONNECT_TOKEN'` и затем
+  **принудительно отключает** сокет.
 
-So "I connected and got immediately disconnected with an error" means you sent a
-**bad** token; "I connected but receive nothing" means you sent **no** token and
-have not joined a room.
+Итак, «я подключился и сразу отключился с ошибкой» означает, что вы отправили
+**плохой** токен; «я подключился, но ничего не получаю» означает, что вы отправили **никакой** токен и
+не присоединились к комнате.
 
 ---
 
-## §3 · Stages
+## §3 · Стадии
 
-Almost all client rendering is a function of the room's current stage. Get the
-stage model right and the rest follows.
+Почти вся клиентская отрисовка — функция текущей стадии комнаты. Сделайте
+модель стадий правильно, и остальное последует.
 
-### §3.1 · The 12 stages, in canonical order
+### §3.1 · 12 стадий, в каноническом порядке
 
 `LOBBY` → `TEAM_SETUP` → `READY_CHECK` → `GAME_BOARD` → `QUESTION_OPENED` →
 `ANSWER_REVIEW` → `SHOP` → `PRESENTATION_PREPARATION` → `PRESENTATION_DEFENSE` →
 `EVALUATION` → `RESULTS` → ~~`FINISHED`~~.
 
-> **`FINISHED` is a rudiment as a *stage*.** It exists in the stage *type* but
-> has no incoming transition in the stage-flow table, and the terminal stage is
-> `RESULTS`. The frontend will **never** observe `currentStage: 'FINISHED'`.
-> "Finished" is a room **status**, not a stage (see §3.2). Do not write code that
-> waits for a `FINISHED` stage.
+> **`FINISHED` — рудимент как *стадия*.** Она существует в *типе* стадии, но
+> не имеет входящего перехода в таблице stage-flow, а терминальная стадия —
+> `RESULTS`. Frontend **никогда** не увидит `currentStage: 'FINISHED'`.
+> «Finished» — это **статус** комнаты, не стадия (см. §3.2). Не пишите код, который
+> ждёт стадию `FINISHED`.
 
-### §3.2 · Status vs stage — orthogonal
+### §3.2 · Статус против стадии — ортогональны
 
-`room.status` and `room.currentStage` are independent axes:
+`room.status` и `room.currentStage` — независимые оси:
 
 - **`status`** ∈ `ACTIVE` | `FINISHED` | `CLOSED`.
-  - `ACTIVE` — the normal playing state. **Every mutation requires `ACTIVE`.**
-  - `FINISHED` — set by `markFinished` when results are calculated **on the
-    `RESULTS` stage**. The game ran to completion.
-  - `CLOSED` — set when the host aborts the room (`POST /api/rooms/:code/close`).
-- **`stage`** — where in the 12-step flow the room is.
+  - `ACTIVE` — нормальное игровое состояние. **Каждая мутация требует `ACTIVE`.**
+  - `FINISHED` — устанавливается `markFinished`, когда результаты рассчитаны **на
+    стадии `RESULTS`**. Игра дошла до завершения.
+  - `CLOSED` — устанавливается, когда ведущий прерывает комнату (`POST /api/rooms/:code/close`).
+- **`stage`** — где в 12-шаговом потоке находится комната.
 
-So a completed game ends as `status: FINISHED` **on** `stage: RESULTS` — never on
-a `FINISHED` stage. A host abort flips `status` to `CLOSED` from whatever stage
-it was on.
+Итак, завершённая игра заканчивается как `status: FINISHED` **на** `stage: RESULTS` — никогда на
+стадии `FINISHED`. Прерывание ведущим переводит `status` в `CLOSED` из любой стадии,
+на которой она была.
 
-### §3.3 · Per-stage cheat sheet
+### §3.3 · Шпаргалка по стадиям
 
-| Stage | What to show | Actions (who) | Enters when → exits to |
+| Стадия | Что показывать | Действия (кто) | Входит когда → выходит в |
 |---|---|---|---|
-| `LOBBY` | Room code, players arriving | Create / join a team (player) | Room created → `TEAM_SETUP` on the **first team created** |
-| `TEAM_SETUP` | Teams forming, topic picks | Join team, select topic, set ready (captain) | First team created → `READY_CHECK` when **≥ `MIN_TEAMS_TO_START`** teams are ready |
-| `READY_CHECK` | Ready teams, "host can start" | Toggle ready (captain); start game (host) | Threshold reached → `GAME_BOARD` when the **host starts** |
-| `GAME_BOARD` | 6×5 board, the active team | Pick a cell (active-team captain); open/reject (host) | Game start, or return from review/shop → `QUESTION_OPENED` when the **host opens** |
-| `QUESTION_OPENED` | Question text, countdown | Submit an answer (active-team captain); advance on timeout (host) | Host opened → `ANSWER_REVIEW` on **answer submit** or **timeout-advance** |
-| `ANSWER_REVIEW` | The submitted answer, host verdict | Accept / reject (host) | Answer/timeout → **fork A**: `GAME_BOARD` or `SHOP` |
-| `SHOP` | Catalog, team balances | Buy items (captain); close shop (host) | Fork A (every-6th block / exhausted board) → **fork B**: `GAME_BOARD` or `PRESENTATION_PREPARATION` |
-| `PRESENTATION_PREPARATION` | Requirements, prep countdown, uploads | Start prep timer (host); upload file (captain) | Final shop closed (board exhausted) → `PRESENTATION_DEFENSE` when the **host starts defenses** |
-| `PRESENTATION_DEFENSE` | Current presenter, the order | Finish / skip presenter (host) | Host started → **fork C**: next presenter, or `EVALUATION` when the queue is exhausted |
-| `EVALUATION` | Criteria, progress (counts only) | Submit / confirm scores (captain & host) | Last defense finished → `RESULTS` when the **host posts results** |
-| `RESULTS` | Final leaderboard | — (terminal) | Host calculated results → terminal; `status` becomes `FINISHED` in the same call |
-| ~~`FINISHED`~~ | — | — | Rudiment — never observed as a stage (see §3.1) |
+| `LOBBY` | Код комнаты, прибывающие игроки | Создать / войти в команду (игрок) | Комната создана → `TEAM_SETUP` при **создании первой команды** |
+| `TEAM_SETUP` | Формирующиеся команды, выбор тем | Войти в команду, выбрать тему, выставить готовность (капитан) | Первая команда создана → `READY_CHECK`, когда **≥ `MIN_TEAMS_TO_START`** команд готовы |
+| `READY_CHECK` | Готовые команды, «ведущий может начать» | Переключить готовность (капитан); начать игру (ведущий) | Порог достигнут → `GAME_BOARD`, когда **ведущий начинает** |
+| `GAME_BOARD` | Поле 6×5, активная команда | Выбрать ячейку (капитан активной команды); открыть/отклонить (ведущий) | Старт игры или возврат из ревью/магазина → `QUESTION_OPENED`, когда **ведущий открывает** |
+| `QUESTION_OPENED` | Текст вопроса, обратный отсчёт | Отправить ответ (капитан активной команды); продвинуть по таймауту (ведущий) | Ведущий открыл → `ANSWER_REVIEW` при **отправке ответа** или **продвижении по таймауту** |
+| `ANSWER_REVIEW` | Отправленный ответ, вердикт ведущего | Принять / отклонить (ведущий) | Ответ/таймаут → **развилка A**: `GAME_BOARD` или `SHOP` |
+| `SHOP` | Каталог, балансы команд | Купить товары (капитан); закрыть магазин (ведущий) | Развилка A (каждый 6-й блок / исчерпанное поле) → **развилка B**: `GAME_BOARD` или `PRESENTATION_PREPARATION` |
+| `PRESENTATION_PREPARATION` | Требования, обратный отсчёт подготовки, загрузки | Запустить таймер подготовки (ведущий); загрузить файл (капитан) | Финальный магазин закрыт (поле исчерпано) → `PRESENTATION_DEFENSE`, когда **ведущий начинает защиты** |
+| `PRESENTATION_DEFENSE` | Текущий выступающий, порядок | Завершить / пропустить выступающего (ведущий) | Ведущий начал → **развилка C**: следующий выступающий или `EVALUATION`, когда очередь исчерпана |
+| `EVALUATION` | Критерии, прогресс (только счётчики) | Отправить / подтвердить оценки (капитан и ведущий) | Последняя защита завершена → `RESULTS`, когда **ведущий публикует результаты** |
+| `RESULTS` | Финальная таблица лидеров | — (терминальная) | Ведущий рассчитал результаты → терминал; `status` становится `FINISHED` в том же вызове |
+| ~~`FINISHED`~~ | — | — | Рудимент — никогда не наблюдается как стадия (см. §3.1) |
 
-### §3.4 · Flow diagram (textual)
+### §3.4 · Диаграмма потока (текстовая)
 
 ```
 LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD ⇄ QUESTION_OPENED → ANSWER_REVIEW
    │
-   ├─ fork A   ANSWER_REVIEW ──→ GAME_BOARD               (normal: keep looping the board)
-   │                         └─→ SHOP                     (every 6th blocked cell, or board exhausted)
+   ├─ развилка A   ANSWER_REVIEW ──→ GAME_BOARD           (норма: продолжаем крутить поле)
+   │                            └─→ SHOP                  (каждая 6-я заблокированная ячейка или поле исчерпано)
    │
-   ├─ fork B   SHOP ──→ GAME_BOARD                        (regular shop close)
-   │                └─→ PRESENTATION_PREPARATION          (final shop: board exhausted)
+   ├─ развилка B   SHOP ──→ GAME_BOARD                    (обычное закрытие магазина)
+   │                    └─→ PRESENTATION_PREPARATION      (финальный магазин: поле исчерпано)
    │
    ├─→ PRESENTATION_PREPARATION → PRESENTATION_DEFENSE
    │
-   ├─ fork C   finish/skip ──→ next presenter             (finite queue — no wrap)
-   │                       └─→ EVALUATION                 (after the last presenter)
+   ├─ развилка C   finish/skip ──→ следующий выступающий  (конечная очередь — без зацикливания)
+   │                           └─→ EVALUATION             (после последнего выступающего)
    │
-   └─→ EVALUATION → RESULTS                               (terminal — status becomes FINISHED here)
+   └─→ EVALUATION → RESULTS                               (терминал — status здесь становится FINISHED)
 ```
 
-A linear backbone with **three branch points** (forks A, B, C — detailed below).
+Линейный костяк с **тремя точками ветвления** (развилки A, B, C — детально ниже).
 
-### §3.5 · The three forks
+### §3.5 · Три развилки
 
-These are the only non-linear transitions. Each is decided **server-side** — the
-client just reacts to the resulting `game-stage-changed` (and the area events).
+Это единственные нелинейные переходы. Каждая решается **на стороне сервера** —
+клиент просто реагирует на итоговое `game-stage-changed` (и события областей).
 
-- **Fork A — `ANSWER_REVIEW` → `GAME_BOARD` | `SHOP`.** After the host reviews an
-  answer, the room enters the shop iff the board is exhausted **or** the blocked-
-  question count is a multiple of 6 (`blockedQuestionsCount % 6 === 0`).
-  - On a shop entry the review block ends with `shop-final-opened` if the board
-    is exhausted, otherwise `shop-opened`.
-  - Otherwise the room returns to `GAME_BOARD`.
-  - The turn moves to the next team **either way** (even on a rejected answer).
-- **Fork B — `SHOP` → `GAME_BOARD` | `PRESENTATION_PREPARATION`.** When the host
-  closes the shop, a **regular** shop returns to `GAME_BOARD`; the **final** shop
-  (board exhausted) moves on to `PRESENTATION_PREPARATION`. Closing emits
-  `shop-closed` carrying `nextStage`.
-- **Fork C — `PRESENTATION_DEFENSE` → next presenter | `EVALUATION`.** The
-  defense queue is the participating teams in ascending `turnOrder`. It is
-  **finite — it does not wrap**. When the host finishes/skips the last presenter
-  there is no next team, which is exactly what drives `defense:finished`
-  (`nextStage: EVALUATION`) and the exit.
+- **Развилка A — `ANSWER_REVIEW` → `GAME_BOARD` | `SHOP`.** После того как ведущий ревьюит
+  ответ, комната входит в магазин тогда и только тогда, когда поле исчерпано **или** счётчик
+  заблокированных вопросов кратен 6 (`blockedQuestionsCount % 6 === 0`).
+  - При входе в магазин блок ревью заканчивается на `shop-final-opened`, если поле
+    исчерпано, иначе на `shop-opened`.
+  - Иначе комната возвращается в `GAME_BOARD`.
+  - Ход переходит к следующей команде **в любом случае** (даже при отклонённом ответе).
+- **Развилка B — `SHOP` → `GAME_BOARD` | `PRESENTATION_PREPARATION`.** Когда ведущий
+  закрывает магазин, **обычный** магазин возвращается в `GAME_BOARD`; **финальный** магазин
+  (поле исчерпано) движется дальше в `PRESENTATION_PREPARATION`. Закрытие эмитирует
+  `shop-closed`, несущий `nextStage`.
+- **Развилка C — `PRESENTATION_DEFENSE` → следующий выступающий | `EVALUATION`.** Очередь
+  защиты — это участвующие команды по возрастанию `turnOrder`. Она
+  **конечна — она не зацикливается**. Когда ведущий завершает/пропускает последнего выступающего,
+  следующей команды нет, что ровно и приводит к `defense:finished`
+  (`nextStage: EVALUATION`) и выходу.
 
-### §3.6 · How the frontend learns the stage
+### §3.6 · Как frontend узнаёт стадию
 
-Two complementary mechanisms:
+Два взаимодополняющих механизма:
 
-- **Push** — subscribe to `server:game-session:game-stage-changed`
-  (`{ roomId, stage }`), emitted room-wide on every transition.
-- **Pull** — read `room.currentStage` from any room-state snapshot
-  (`GET /api/rooms/:code/state`, the reconnect replies, or the WS
-  `room-state` snapshot).
+- **Push** — подпишитесь на `server:game-session:game-stage-changed`
+  (`{ roomId, stage }`), эмитируется всем в комнате на каждом переходе.
+- **Pull** — читайте `room.currentStage` из любого снимка состояния комнаты
+  (`GET /api/rooms/:code/state`, ответы переподключения или WS-снимок
+  `room-state`).
 
-Use the pull on (re)connect to establish the current stage, then keep it live
-with the push.
+Используйте pull при (пере)подключении, чтобы установить текущую стадию, затем держите её живой
+через push.
 
 ---
 
-## §4 · Scenarios (REST → WS, end-to-end)
+## §4 · Сценарии (REST → WS, сквозные)
 
-Each scenario lists the REST call you make and the WS events that arrive in
-response, with their audience in brackets. All paths are `/api`-prefixed;
-mutations are REST (there is no `client:*` mutation command — the only client→
-server commands are the transport join/leave, [§5.3](#53--clientserver-commands)).
-For exact bodies and response DTOs, see **Swagger**; for exact payloads, see
-**`realtime-events.md`** at the cited §.
+Каждый сценарий перечисляет REST-вызов, который вы делаете, и WS-события, приходящие в
+ответ, с их аудиторией в скобках. Все пути с префиксом `/api`;
+мутации — это REST (нет команды-мутации `client:*` — единственные команды client→
+server — это транспортные join/leave, [§5.3](#53--команды-clientserver)).
+Для точных тел и response DTO см. **Swagger**; для точных payload'ов см.
+**`realtime-events.md`** в цитируемом §.
 
-> **200 vs 201.** The *creating* POSTs return **201**: `POST /rooms`,
+> **200 против 201.** *Создающие* POST возвращают **201**: `POST /rooms`,
 > `POST /rooms/:code/players`, `POST /rooms/:code/teams`,
-> `POST /rooms/:code/teams/:teamId/members`. Every *game-action* POST returns
-> **200** (game start, board/question moves, shop purchase/close, presentation,
-> defense, evaluation, reconnect, room close). Plan your response handling
-> accordingly.
+> `POST /rooms/:code/teams/:teamId/members`. Каждый POST *игрового действия* возвращает
+> **200** (старт игры, ходы поля/вопроса, покупка/закрытие магазина, презентация,
+> защита, оценивание, переподключение, закрытие комнаты). Планируйте обработку ответа
+> соответственно.
 
-### §4.1 · Lobby
+### §4.1 · Лобби
 
-1. `POST /api/rooms` → **201**, `hostReconnectToken`. *(host)*
-2. `POST /api/rooms/:code/players` → **201**, `reconnectToken`; room-wide
-   `player-joined`. *(each player)*
-3. `POST /api/rooms/:code/teams` → **201**; room-wide `team-created`
-   (the **first** team also fires `game-stage-changed` → `TEAM_SETUP`). *(captain)*
-4. `POST /api/rooms/:code/teams/:teamId/members` → **201**; room-wide
-   `team-joined` **and** `team-updated`. *(player)*
-5. `PATCH /api/rooms/:code/teams/:teamId/topic` → **200**; room-wide
-   `team-topic-selected`. *(captain)*
-6. `PATCH /api/rooms/:code/teams/:teamId/ready` → **200**; room-wide
-   `team-ready-changed` **and** `game-can-start-changed`. When the ready count
-   reaches `MIN_TEAMS_TO_START`, also `game-stage-changed` → `READY_CHECK`.
-   *(captain)*
-7. `POST /api/rooms/:code/game/start` → **200**; room-wide `game-started`,
+1. `POST /api/rooms` → **201**, `hostReconnectToken`. *(ведущий)*
+2. `POST /api/rooms/:code/players` → **201**, `reconnectToken`; всем в комнате
+   `player-joined`. *(каждый игрок)*
+3. `POST /api/rooms/:code/teams` → **201**; всем в комнате `team-created`
+   (**первая** команда также запускает `game-stage-changed` → `TEAM_SETUP`). *(капитан)*
+4. `POST /api/rooms/:code/teams/:teamId/members` → **201**; всем в комнате
+   `team-joined` **и** `team-updated`. *(игрок)*
+5. `PATCH /api/rooms/:code/teams/:teamId/topic` → **200**; всем в комнате
+   `team-topic-selected`. *(капитан)*
+6. `PATCH /api/rooms/:code/teams/:teamId/ready` → **200**; всем в комнате
+   `team-ready-changed` **и** `game-can-start-changed`. Когда счётчик готовности
+   достигает `MIN_TEAMS_TO_START`, также `game-stage-changed` → `READY_CHECK`.
+   *(капитан)*
+7. `POST /api/rooms/:code/game/start` → **200**; всем в комнате `game-started`,
    `game-first-team-selected`, `game-stage-changed` (→ `GAME_BOARD`),
-   `game-turn-changed`, `game-state-updated`. *(host)* → see [§4.2](#42--battle).
+   `game-turn-changed`, `game-state-updated`. *(ведущий)* → см. [§4.2](#42--бой).
 
-Catalog: `realtime-events.md` §16.1–§16.3.
+Каталог: `realtime-events.md` §16.1–§16.3.
 
-### §4.2 · Battle
+### §4.2 · Бой
 
-1. `POST /api/rooms/:code/board/select` → **200**; **host-only**
-   `cell-selection-requested`. *(active-team captain)*
-2. Host decides:
-   - `POST /api/rooms/:code/questions/open` → **200**; room-wide
-     `cell-selection-approved`, `question-opened` (**no** correct answer),
-     `question-timer-started`. *(host)*
-   - or `POST /api/rooms/:code/questions/reject` → **200**; room-wide
-     `cell-selection-rejected`, `board-state-updated`; captain re-picks. *(host)*
-3. `POST /api/rooms/:code/questions/answer` → **200**; **room-wide**
-   `answer-submitted` — ⚠️ **this payload carries the answer text**
-   (`{ roomId, cellId, teamId, answer }`) to the whole room. The text is not
-   persisted; it is a live echo so every client can show what was said.
-   *(active-team captain)*
-4. `POST /api/rooms/:code/questions/review` → **200**; room-wide
-   `answer-accepted` **or** `answer-rejected`, then (only on accept)
-   `score-changed`, then `cell-blocked`, `game-turn-changed`,
-   `board-state-updated`; on a shop entry (fork A) `shop-opened` /
-   `shop-final-opened` last. If the host passed `revealAnswer: true`, a
-   **host-only** `question-correct-answer-shown-to-host` also fires. *(host)*
+1. `POST /api/rooms/:code/board/select` → **200**; **только ведущему**
+   `cell-selection-requested`. *(капитан активной команды)*
+2. Ведущий решает:
+   - `POST /api/rooms/:code/questions/open` → **200**; всем в комнате
+     `cell-selection-approved`, `question-opened` (**без** правильного ответа),
+     `question-timer-started`. *(ведущий)*
+   - или `POST /api/rooms/:code/questions/reject` → **200**; всем в комнате
+     `cell-selection-rejected`, `board-state-updated`; капитан перевыбирает. *(ведущий)*
+3. `POST /api/rooms/:code/questions/answer` → **200**; **всем в комнате**
+   `answer-submitted` — ⚠️ **этот payload несёт текст ответа**
+   (`{ roomId, cellId, teamId, answer }`) всей комнате. Текст не
+   персистится; это живое эхо, чтобы каждый клиент мог показать, что было сказано.
+   *(капитан активной команды)*
+4. `POST /api/rooms/:code/questions/review` → **200**; всем в комнате
+   `answer-accepted` **или** `answer-rejected`, затем (только при принятии)
+   `score-changed`, затем `cell-blocked`, `game-turn-changed`,
+   `board-state-updated`; при входе в магазин (развилка A) `shop-opened` /
+   `shop-final-opened` последними. Если ведущий передал `revealAnswer: true`,
+   также срабатывает **только ведущему** `question-correct-answer-shown-to-host`. *(ведущий)*
 
-**Timeout branch:** if the answer timer expires while still in
-`QUESTION_OPENED`, the host calls `POST /api/rooms/:code/game/advance` → **200**;
-room-wide `question-timer-ended`, moving the room to `ANSWER_REVIEW` (then review
-as in step 4). There is no server scheduler — the client counts down to `endsAt`
-locally and the host bridges the timeout.
+**Ветка таймаута:** если таймер ответа истекает, пока всё ещё в
+`QUESTION_OPENED`, ведущий вызывает `POST /api/rooms/:code/game/advance` → **200**;
+всем в комнате `question-timer-ended`, перемещая комнату в `ANSWER_REVIEW` (затем ревью
+как в шаге 4). Серверного планировщика нет — клиент отсчитывает до `endsAt`
+локально, а ведущий перекрывает таймаут.
 
-Catalog: `realtime-events.md` §16.4.
+Каталог: `realtime-events.md` §16.4.
 
-### §4.3 · Shop
+### §4.3 · Магазин
 
-The shop is itself the destination of fork A — `shop-opened` /
-`shop-final-opened` arrive **last** in the [§4.2](#42--battle) review block.
+Магазин сам является пунктом назначения развилки A — `shop-opened` /
+`shop-final-opened` приходят **последними** в блоке ревью [§4.2](#42--бой).
 
-1. `GET /api/rooms/:code/shop/items` / `GET /api/rooms/:code/shop/round` — read
-   the catalog and the round/timer. *(open)*
-2. `POST /api/rooms/:code/shop/purchase` → **200**; room-wide `score-changed`
-   (**negative** delta — only `balance` moves), `shop-item-purchased`,
-   `shop-item-unavailable`, `shop-state-updated` (all **without** any QR
-   content); then, **after commit**, a **team-only** `inventory-updated`
-   carrying the QR `publicUrl`. *(captain, for their own team)*
-3. `POST /api/rooms/:code/shop/close` → **200**; room-wide `shop-closed`
-   (fork B → `GAME_BOARD` or `PRESENTATION_PREPARATION`). *(host)*
+1. `GET /api/rooms/:code/shop/items` / `GET /api/rooms/:code/shop/round` — читают
+   каталог и раунд/таймер. *(открыто)*
+2. `POST /api/rooms/:code/shop/purchase` → **200**; всем в комнате `score-changed`
+   (**отрицательная** delta — двигается только `balance`), `shop-item-purchased`,
+   `shop-item-unavailable`, `shop-state-updated` (все **без** какого-либо QR-
+   содержимого); затем, **после commit**, **только команде** `inventory-updated`,
+   несущий QR `publicUrl`. *(капитан, для своей команды)*
+3. `POST /api/rooms/:code/shop/close` → **200**; всем в комнате `shop-closed`
+   (развилка B → `GAME_BOARD` или `PRESENTATION_PREPARATION`). *(ведущий)*
 
-Catalog: `realtime-events.md` §16.5. Privacy: see [§6](#6--files).
+Каталог: `realtime-events.md` §16.5. Приватность: см. [§6](#6--файлы).
 
-### §4.4 · Presentation
+### §4.4 · Презентация
 
-1. `POST /api/rooms/:code/presentation/start-preparation` → **200**; room-wide
-   `preparation-started` then `timer-started`. *(host)*
+1. `POST /api/rooms/:code/presentation/start-preparation` → **200**; всем в комнате
+   `preparation-started` затем `timer-started`. *(ведущий)*
 2. `POST /api/rooms/:code/presentation/upload` (multipart `file`) → **200**;
-   after commit, room-wide `submission-uploaded`, then `submission-late` **iff**
-   the upload was after the deadline, then `files-updated`. *(captain)*
-3. `PUT /api/rooms/:code/presentation/upload` (replace) → **200**; room-wide
-   `submission-replaced` then `files-updated`. (One upsert use case backs both
-   verbs.) *(captain)*
-4. Reads: `GET …/presentation/{requirements,deadline,submissions,files}`. *(open)*
+   после commit, всем в комнате `submission-uploaded`, затем `submission-late` **тогда и только тогда**,
+   когда загрузка была после дедлайна, затем `files-updated`. *(капитан)*
+3. `PUT /api/rooms/:code/presentation/upload` (замена) → **200**; всем в комнате
+   `submission-replaced` затем `files-updated`. (Один upsert use-case обслуживает оба
+   метода.) *(капитан)*
+4. Чтения: `GET …/presentation/{requirements,deadline,submissions,files}`. *(открыто)*
 
-Catalog: `realtime-events.md` §16.6. Files are **public** — see [§6](#6--files).
+Каталог: `realtime-events.md` §16.6. Файлы **публичны** — см. [§6](#6--файлы).
 
-### §4.5 · Defense
+### §4.5 · Защита
 
-1. `POST /api/rooms/:code/defense/start` → **200**; room-wide `defense:started`
-   (carries the whole `order`) then `defense:team-started` (the first presenter).
-   *(host)*
-2. `POST /api/rooms/:code/defense/finish-presenter` (or `.../skip-presenter`) →
-   **200**; room-wide `defense:team-finished` (or `defense:team-skipped`), then
-   `defense:team-started` for the **next** presenter. *(host)*
-3. On the **last** presenter, instead of `team-started` you get
-   `defense:finished` (`nextStage: EVALUATION`) — fork C. *(host)*
-4. `GET /api/rooms/:code/defense/state` — the derived state, for reconnect /
-   refresh. *(open)*
+1. `POST /api/rooms/:code/defense/start` → **200**; всем в комнате `defense:started`
+   (несёт весь `order`) затем `defense:team-started` (первый выступающий).
+   *(ведущий)*
+2. `POST /api/rooms/:code/defense/finish-presenter` (или `.../skip-presenter`) →
+   **200**; всем в комнате `defense:team-finished` (или `defense:team-skipped`), затем
+   `defense:team-started` для **следующего** выступающего. *(ведущий)*
+3. На **последнем** выступающем вместо `team-started` вы получаете
+   `defense:finished` (`nextStage: EVALUATION`) — развилка C. *(ведущий)*
+4. `GET /api/rooms/:code/defense/state` — выведенное состояние, для переподключения /
+   обновления. *(открыто)*
 
-Catalog: `realtime-events.md` §16.7.
+Каталог: `realtime-events.md` §16.7.
 
-### §4.6 · Evaluation & results
+### §4.6 · Оценивание и результаты
 
-1. Reads: `GET …/evaluation/{criteria,teams,progress}` — `progress` is
-   **counts only** (no numbers). *(open)*
-2. `POST /api/rooms/:code/evaluation/team` *(captain)* or `.../evaluation/host`
-   *(host)* → **200**; room-wide `score-submitted` then `progress-updated` —
-   **neither carries a numeric score**. Your own numbers come back only in the
-   POST reply.
-3. `POST …/evaluation/team/confirm` / `.../host/confirm` → **200**; room-wide
-   `score-confirmed` (one per frozen row) then `progress-updated`. Confirm is
-   per-target, or all-at-once when you omit `targetTeamId`.
-4. `POST /api/rooms/:code/evaluation/results` → **200**; **after commit**
-   room-wide `completed` (stage `RESULTS`, status `FINISHED`) then
-   `results-calculated` (the public leaderboard aggregates). *(host)*
-5. `GET /api/rooms/:code/evaluation/results` — the leaderboard; works on a
-   `FINISHED` room; individual evaluator scores stay private. *(open)*
+1. Чтения: `GET …/evaluation/{criteria,teams,progress}` — `progress` —
+   **только счётчики** (без чисел). *(открыто)*
+2. `POST /api/rooms/:code/evaluation/team` *(капитан)* или `.../evaluation/host`
+   *(ведущий)* → **200**; всем в комнате `score-submitted` затем `progress-updated` —
+   **ни одно не несёт числовую оценку**. Ваши собственные числа возвращаются только в
+   ответе POST.
+3. `POST …/evaluation/team/confirm` / `.../host/confirm` → **200**; всем в комнате
+   `score-confirmed` (по одному на замороженную строку) затем `progress-updated`. Подтверждение
+   per-target или всё-сразу, когда вы опускаете `targetTeamId`.
+4. `POST /api/rooms/:code/evaluation/results` → **200**; **после commit**
+   всем в комнате `completed` (стадия `RESULTS`, статус `FINISHED`) затем
+   `results-calculated` (публичные агрегаты таблицы лидеров). *(ведущий)*
+5. `GET /api/rooms/:code/evaluation/results` — таблица лидеров; работает на
+   `FINISHED`-комнате; индивидуальные оценки оценщиков остаются приватными. *(открыто)*
 
-Catalog: `realtime-events.md` §16.8.
+Каталог: `realtime-events.md` §16.8.
 
-### §4.7 · Reconnect
+### §4.7 · Переподключение
 
-1. **HTTP** — `POST /api/rooms/:code/players/reconnect` *(player)* or
-   `.../host/reconnect` *(host)* → **200**, a `RoomStateResponseDto` snapshot
-   (no new token). → [§2.4](#24--reconnect)
-2. **WebSocket** — open the socket with `auth.reconnectToken`. The **originating**
-   socket receives `connection-restored` then `room-state`; the **room** is told
-   via `client-reconnected` / `host-reconnected`.
-3. **Drop** — when a player's **last** socket closes, the room gets
-   `connection-lost`. A host drop is silent by design (the room outlives a host
-   reload). Closing **one** tab of several fires nothing (multi-tab is presence-
-   counted).
+1. **HTTP** — `POST /api/rooms/:code/players/reconnect` *(игрок)* или
+   `.../host/reconnect` *(ведущий)* → **200**, снимок `RoomStateResponseDto`
+   (без нового токена). → [§2.4](#24--переподключение)
+2. **WebSocket** — откройте сокет с `auth.reconnectToken`. **Отправляющий**
+   сокет получает `connection-restored` затем `room-state`; **комнате** сообщается
+   через `client-reconnected` / `host-reconnected`.
+3. **Drop** — когда **последний** сокет игрока закрывается, комната получает
+   `connection-lost`. Drop ведущего молчалив по дизайну (комната переживает перезагрузку
+   ведущего). Закрытие **одной** вкладки из нескольких не запускает ничего (мультивкладочность считается
+   по присутствию).
 
-Catalog: `realtime-events.md` §16.1 and the §5.2b reconnect section.
+Каталог: `realtime-events.md` §16.1 и секция переподключения §5.2b.
 
 ---
 
 ## §5 · WebSocket
 
-The catalog (`realtime-events.md`) is the source of truth for names, audiences
-and payloads. This section covers **how to connect and reason about delivery** —
-not a second copy of the catalog.
+Каталог (`realtime-events.md`) — источник истины для имён, аудиторий
+и payload'ов. Эта секция покрывает **как подключаться и рассуждать о доставке** —
+не вторую копию каталога.
 
-### §5.1 · Connecting
+### §5.1 · Подключение
 
 ```js
 import { io } from 'socket.io-client';
 
 const socket = io(BACKEND_URL, {
-  path: '/socket.io',            // must match WS_PATH
+  path: '/socket.io',            // должен совпадать с WS_PATH
   transports: ['websocket'],
-  auth: { reconnectToken },      // host OR player token; omit for an anonymous socket
+  auth: { reconnectToken },      // токен ведущего ИЛИ игрока; опустите для анонимного сокета
 });
 ```
 
-- **With a token:** on success the backend resolves your identity, auto-joins
-  your room, and sends `connection-restored` then a full `room-state` snapshot to
-  your socket — that pair is your "join complete, here is the world" signal.
-- **Without a token:** you connect as an anonymous socket and are joined to
-  nothing; you must `client:realtime:join-room` to see a room
-  ([§2.5](#25--the-anonymous-socket-spectator)).
-- **Bad (non-empty) token:** a single `error` event then a forced disconnect
+- **С токеном:** при успехе backend разрешает вашу идентичность, автоматически присоединяет
+  вас к комнате и отправляет `connection-restored` затем полный снимок `room-state` на
+  ваш сокет — эта пара и есть ваш сигнал «вход завершён, вот мир».
+- **Без токена:** вы подключаетесь как анонимный сокет и не присоединены
+  ни к чему; вы должны `client:realtime:join-room`, чтобы видеть комнату
+  ([§2.5](#25--анонимный-сокет-зритель)).
+- **Плохой (непустой) токен:** одно событие `error` затем принудительное отключение
   ([§2.8](#28--invalid_reconnect_token)).
 
-### §5.2 · Audiences
+### §5.2 · Аудитории
 
-Delivery is the core concept. An event reaches one of four audiences:
+Доставка — это ключевая концепция. Событие достигает одну из четырёх аудиторий:
 
-| Audience | Mechanism | Who receives |
+| Аудитория | Механизм | Кто получает |
 |---|---|---|
-| **room-wide** | Socket.IO room channel | Everyone joined to the room (identified sockets auto-join; anonymous sockets that `join-room`). **Only non-secret events.** |
-| **host-only** | Presence reverse-lookup (`h:<roomId>`), **not** a Socket.IO room | The host's live socket(s). Used for the host secrets — never a room channel (any socket could join one). |
-| **team-only** | Presence lookup over the team roster | The live sockets of one team's members. |
-| **originating** | The single source socket | Snapshots / errors returned to the caller (e.g. `room-state`, `connection-restored`). |
+| **всем в комнате** | Канал комнаты Socket.IO | Все, кто присоединён к комнате (идентифицированные сокеты присоединяются автоматически; анонимные сокеты, которые делают `join-room`). **Только не-секретные события.** |
+| **только ведущему** | Обратный поиск по присутствию (`h:<roomId>`), **не** комната Socket.IO | Живой(ые) сокет(ы) ведущего. Используется для секретов ведущего — никогда канал комнаты (любой сокет мог бы к нему присоединиться). |
+| **только команде** | Поиск по присутствию по составу команды | Живые сокеты членов одной команды. |
+| **только отправителю** | Единственный исходный сокет | Снимки / ошибки, возвращаемые вызывающему (например, `room-state`, `connection-restored`). |
 
-There is **no captain channel** — captain-targeted delivery uses the team
-audience.
+**Канала капитана нет** — доставка, нацеленная на капитана, использует аудиторию
+команды.
 
-### §5.3 · Client→server commands
+### §5.3 · Команды client→server
 
-There are exactly **two**, both pure transport grouping with **no validation**:
+Их ровно **две**, обе — чистая транспортная группировка **без валидации**:
 
-| Command | Effect |
+| Команда | Эффект |
 |---|---|
-| `client:realtime:join-room` | Attach the socket to a room channel. No membership check — any socket, any room. |
-| `client:realtime:leave-room` | Detach from the room channel. |
+| `client:realtime:join-room` | Присоединить сокет к каналу комнаты. Без проверки членства — любой сокет, любая комната. |
+| `client:realtime:leave-room` | Отсоединить от канала комнаты. |
 
-**Every game mutation is REST, not WebSocket.** The catalog lists `client:<area>:*`
-command rows (create-team, submit-answer, purchase, …) — these are a *planned
-forward path* and are **not implemented**. Do not try to mutate over the socket;
-call the REST endpoint.
+**Каждая игровая мутация — это REST, не WebSocket.** Каталог перечисляет строки команд
+`client:<area>:*` (create-team, submit-answer, purchase, …) — это *запланированный
+путь на будущее*, и они **не реализованы**. Не пытайтесь мутировать через сокет;
+вызывайте REST-эндпоинт.
 
-### §5.4 · The eight event areas (overview)
+### §5.4 · Восемь областей событий (обзор)
 
-A map, not the catalog — for each area, the events you will most often wire and
-where to find the payloads. **Follow the § link for the full list and shapes.**
+Карта, не каталог — для каждой области события, которые вы будете подключать чаще всего, и
+где найти payload'ы. **Перейдите по § ссылке за полным списком и формами.**
 
-| Area | Key events | Payloads |
+| Область | Ключевые события | Payload'ы |
 |---|---|---|
-| **Connection & reconnect** | `connection-restored`, `room-state`, `connection-lost`, `client/host-reconnected`, `error` | `realtime-events.md` §16.1 / §5.2b |
-| **Lobby** | `player-joined`, `team-created/joined/updated`, `team-topic-selected`, `team-ready-changed`, `game-can-start-changed` | §16.2 / §5.2a |
-| **Game start** | `game-started`, `game-first-team-selected`, `game-stage-changed`, `game-turn-changed`, `game-state-updated` | §16.3 / §5.2a |
-| **Gameplay (battle)** | `board-state-updated`, `cell-selection-*`, `question-opened`, `question-timer-*`, `answer-submitted`, `answer-accepted/rejected`, `cell-blocked`, `score-changed` | §16.4 |
-| **Commerce (shop)** | `shop-opened/final-opened/closed`, `shop-item-purchased`, `shop-item-unavailable`, `shop-state-updated`, `inventory-updated` | §16.5 |
-| **Presentation** | `preparation-started`, `timer-started`, `submission-uploaded/replaced`, `submission-late`, `files-updated` | §16.6 |
-| **Defense** | `defense:started`, `team-started`, `team-finished`, `team-skipped`, `finished` | §16.7 |
-| **Evaluation & results** | `score-submitted`, `score-confirmed`, `progress-updated`, `completed`, `results-calculated` | §16.8 |
+| **Подключение и переподключение** | `connection-restored`, `room-state`, `connection-lost`, `client/host-reconnected`, `error` | `realtime-events.md` §16.1 / §5.2b |
+| **Лобби** | `player-joined`, `team-created/joined/updated`, `team-topic-selected`, `team-ready-changed`, `game-can-start-changed` | §16.2 / §5.2a |
+| **Старт игры** | `game-started`, `game-first-team-selected`, `game-stage-changed`, `game-turn-changed`, `game-state-updated` | §16.3 / §5.2a |
+| **Геймплей (бой)** | `board-state-updated`, `cell-selection-*`, `question-opened`, `question-timer-*`, `answer-submitted`, `answer-accepted/rejected`, `cell-blocked`, `score-changed` | §16.4 |
+| **Коммерция (магазин)** | `shop-opened/final-opened/closed`, `shop-item-purchased`, `shop-item-unavailable`, `shop-state-updated`, `inventory-updated` | §16.5 |
+| **Презентация** | `preparation-started`, `timer-started`, `submission-uploaded/replaced`, `submission-late`, `files-updated` | §16.6 |
+| **Защита** | `defense:started`, `team-started`, `team-finished`, `team-skipped`, `finished` | §16.7 |
+| **Оценивание и результаты** | `score-submitted`, `score-confirmed`, `progress-updated`, `completed`, `results-calculated` | §16.8 |
 
-### §5.5 · Gotchas
+### §5.5 · Подводные камни
 
-- **Timestamps are ISO strings.** Server-side `Date` values (`startedAt`,
-  `endsAt`, `uploadedAt`, …) are serialised to ISO-8601 **strings** over
-  Socket.IO/JSON. Parse them; don't expect numbers.
-- **Host-only events are invisible to players.** `cell-selection-requested` and
-  `question-correct-answer-shown-to-host` go to the host socket only. A host
-  client must subscribe to them; a player client will never see them and must not
-  wait for them.
-- **`score-changed` is one event for two directions.** A positive `delta` is an
-  earn (answer accepted); a negative `delta` is a spend (shop purchase — only
-  `balance` moves, `earnedScore` holds). Same event name, both cases.
-- **`game-can-start-changed` is room-wide.** Although it conceptually targets the
-  host, it is currently broadcast room-wide. Non-host clients may simply ignore
-  it.
-- **`team-updated` payload is not uniform.** Joining a team emits
-  `{ roomId, team }`; leaving a team emits `{ roomId, teamId, team }`. Treat
-  `teamId` as **optional** on this event and read the id from `team.id` when it's
-  absent.
-- **Reserved/superseded events never arrive.** These names exist in the catalog
-  but are not emitted today, so do not wire handlers expecting them:
+- **Временные метки — ISO-строки.** Серверные значения `Date` (`startedAt`,
+  `endsAt`, `uploadedAt`, …) сериализуются в **строки** ISO-8601 поверх
+  Socket.IO/JSON. Парсите их; не ждите чисел.
+- **События только ведущему невидимы для игроков.** `cell-selection-requested` и
+  `question-correct-answer-shown-to-host` идут только на сокет ведущего. Клиент
+  ведущего должен на них подписаться; клиент игрока никогда их не увидит и не должен
+  их ждать.
+- **`score-changed` — одно событие для двух направлений.** Положительная `delta` — это
+  начисление (ответ принят); отрицательная `delta` — это трата (покупка в магазине — двигается только
+  `balance`, `earnedScore` держится). То же имя события, оба случая.
+- **`game-can-start-changed` — всем в комнате.** Хотя концептуально оно нацелено на
+  ведущего, сейчас оно рассылается всем в комнате. Не-ведущие клиенты могут просто игнорировать
+  его.
+- **Payload `team-updated` не единообразен.** Вход в команду эмитирует
+  `{ roomId, team }`; выход из команды эмитирует `{ roomId, teamId, team }`. Считайте
+  `teamId` **опциональным** на этом событии и читайте id из `team.id`, когда он
+  отсутствует.
+- **Зарезервированные/вытесненные события никогда не приходят.** Эти имена существуют в каталоге,
+  но сегодня не эмитируются, поэтому не подключайте обработчики, ожидающие их:
   `cell-selected`, `player-left`, `shop-purchase-rejected`,
   `requirements-updated`, `timer-ended`, `submission-status-changed`,
-  `results-shown`. (Notably: a rejected purchase is the REST **409**, not a
-  socket event; the various timers surface via their `GET` reads, never a pushed
+  `results-shown`. (В частности: отклонённая покупка — это REST **409**, не
+  событие сокета; различные таймеры всплывают через их `GET`-чтения, никогда не через push'нутый
   `timer-ended`.)
 
-### §5.6 · Counts
+### §5.6 · Счётчики
 
-As implemented today: **57** distinct server→client events are emitted, **7**
-further catalog names are reserved/superseded (listed in
-[§5.5](#55--gotchas) — defined but never sent), and **2** client→server commands
-exist (`join-room`, `leave-room`). The catalog (`realtime-events.md`) is the
-authoritative list.
+Как реализовано сегодня: эмитируется **57** различных событий server→client, ещё **7**
+имён каталога зарезервированы/вытеснены (перечислены в
+[§5.5](#55--подводные-камни) — определены, но никогда не отправляются), и существуют **2** команды client→server
+(`join-room`, `leave-room`). Каталог (`realtime-events.md`) — авторитетный список.
 
 ---
 
-## §6 · Files
+## §6 · Файлы
 
-Two file kinds, **opposite** privacy models. Do not copy one onto the other.
+Два вида файлов, **противоположные** модели приватности. Не копируйте одну на другую.
 
-### How file links behave
+### Как ведут себя ссылки на файлы
 
-`publicUrl` is a **direct, public** MinIO object URL — **not** a presigned,
-time-limited link. Objects are stored with `Content-Disposition: attachment` and
-a server-canonical `Content-Type`, so opening the URL **downloads** the file
-rather than rendering it inline. In the UI, treat `publicUrl` as a **download
-link**, not as something to embed (`<img>`/`<iframe>`).
+`publicUrl` — это **прямой, публичный** URL объекта MinIO — **не** presigned-
+ссылка с ограничением по времени. Объекты хранятся с `Content-Disposition: attachment` и
+серверно-каноническим `Content-Type`, поэтому открытие URL **скачивает** файл,
+а не отрисовывает его inline. В UI обращайтесь с `publicUrl` как со **ссылкой на
+скачивание**, не как с чем-то для встраивания (`<img>`/`<iframe>`).
 
-### QR tools — secret (commerce)
+### QR-инструменты — секретны (коммерция)
 
-A purchased QR tool belongs to the **buying team only**.
+Купленный QR-инструмент принадлежит **только купившей команде**.
 
-- Delivered over the **team-only** `inventory-updated` event (carries
-  `publicUrl`) and the **team-gated** REST reads
+- Доставляется через событие **только команде** `inventory-updated` (несёт
+  `publicUrl`) и **gated по команде** REST-чтения
   `GET /api/rooms/:code/inventory/teams/:teamId[/qr-tools]`
-  (`TeamMemberOrHostGuard` — the team's own members or the host).
-- **Never** room-wide. The room-wide commerce payloads
-  (`shop-item-purchased`, `shop-state-updated`) deliberately omit all QR content
-  — leaking it would hand every team the purchased advantage.
+  (`TeamMemberOrHostGuard` — собственные члены команды или ведущий).
+- **Никогда** всем в комнате. Коммерческие payload'ы всем в комнате
+  (`shop-item-purchased`, `shop-state-updated`) намеренно опускают всё QR-содержимое
+  — его утечка вручила бы каждой команде купленное преимущество.
 
-### Presentations — public
+### Презентации — публичны
 
-A team's presentation file is meant to be seen by the host **and** the other
-teams.
+Файл презентации команды предназначен для просмотра ведущим **и** другими
+командами.
 
-- Delivered **room-wide**: `submission-uploaded` / `submission-replaced` and
-  `files-updated` carry the `publicUrl`, and the open
-  `GET /api/rooms/:code/presentation/files` returns the same projection.
-- There is **no** team-gating here, by design. **Do not** apply the commerce
-  secrecy pattern to presentations out of inertia — they have no secret to keep.
+- Доставляется **всем в комнате**: `submission-uploaded` / `submission-replaced` и
+  `files-updated` несут `publicUrl`, а открытый
+  `GET /api/rooms/:code/presentation/files` возвращает ту же проекцию.
+- Здесь **нет** gating по команде, по дизайну. **Не** применяйте паттерн
+  коммерческой секретности к презентациям по инерции — у них нет секрета, который надо хранить.
 
 ---
 
-### Navigation
+### Навигация
 
-Read §0 → §6 in order on first integration. Cross-references throughout point to
-**Swagger** (`/docs`) for REST request/response detail and to
-**`realtime-events.md`** (§16.x) for WebSocket payloads. This file is the seam
-between the two.
+Читайте §0 → §6 по порядку при первой интеграции. Перекрёстные ссылки по всему тексту указывают на
+**Swagger** (`/docs`) за деталями REST запроса/ответа и на
+**`realtime-events.md`** (§16.x) за WebSocket-payload'ами. Этот файл — шов
+между этими двумя.

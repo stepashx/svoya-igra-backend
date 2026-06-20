@@ -1,46 +1,47 @@
-# MinIO (local object storage)
+# MinIO (локальное объектное хранилище)
 
-MinIO is the S3-compatible object store. **PostgreSQL stores only file metadata;
-MinIO stores the bytes.** For the MVP the bucket is public and files are served
-via plain public URLs — no signed URLs, no private buckets, no CDN (see
-[Known limitations](#known-limitations)).
+MinIO — это S3-совместимое объектное хранилище. **PostgreSQL хранит только
+метаданные файлов; байты хранит MinIO.** В MVP бакет публичный, и файлы
+отдаются через простые публичные URL — без presigned URL, без приватных
+бакетов, без CDN (см. [Известные ограничения](#известные-ограничения)).
 
-## Local access
+## Локальный доступ
 
-| What | Value (from `.env.example`) |
+| Что | Значение (из `.env.example`) |
 |---|---|
 | S3 API endpoint | http://localhost:9000 |
-| Web console | http://localhost:9001 |
-| Root user / access key | `minioadmin` |
-| Root password / secret key | `minioadmin` |
-| Bucket | `svoya-igra` |
+| Web-консоль | http://localhost:9001 |
+| Root-пользователь / access key | `minioadmin` |
+| Root-пароль / secret key | `minioadmin` |
+| Бакет | `svoya-igra` |
 
-The MinIO container's root credentials are set from `MINIO_ACCESS_KEY` /
-`MINIO_SECRET_KEY`, so the same values the backend uses also log you into the
-console. These are **local-development defaults** — change them everywhere
-before any shared environment.
+Root-учётные данные контейнера MinIO задаются из `MINIO_ACCESS_KEY` /
+`MINIO_SECRET_KEY`, поэтому те же значения, что использует backend, заодно
+открывают вход в консоль. Это **значения по умолчанию для локальной
+разработки** — поменяйте их везде, прежде чем переходить к любому общему
+окружению.
 
-## The bucket is provisioned by the seed
+## Бакет провижинится сидом
 
-`npm run db:seed` provisions MinIO: it creates the `svoya-igra` bucket if it is
-absent, applies the anonymous public-read policy, and uploads one placeholder QR
-`.svg` per `qr_tool`. The write side lives in
-`src/infrastructure/database/seeds/bucket-provisioning.ts` and is idempotent —
-re-running the seed never re-creates the bucket or duplicates objects. See
+`npm run db:seed` провижинит MinIO: создаёт бакет `svoya-igra`, если его нет,
+применяет анонимную политику публичного чтения и загружает один placeholder-QR
+`.svg` на каждый `qr_tool`. Запись живёт в
+`src/infrastructure/database/seeds/bucket-provisioning.ts` и идемпотентна —
+повторный запуск сида никогда не пересоздаёт бакет и не дублирует объекты. См.
 [migrations-and-seeds.md](migrations-and-seeds.md).
 
-The runtime storage health probe is **read-only**: it checks that the configured
-bucket exists and never creates it. So on a fresh stack — before the seed has
-run — `GET /api/health` reports `storage: error` (bucket does not exist); after
-`db:seed`, storage turns green.
+Рантайм-проба здоровья хранилища **только на чтение**: она проверяет, что
+сконфигурированный бакет существует, и никогда его не создаёт. Поэтому на свежем
+стеке — до того как отработал сид — `GET /api/health` сообщает `storage: error`
+(бакет не существует); после `db:seed` хранилище зеленеет.
 
-If you want to create the bucket **without** running the full seed (e.g. to turn
-storage green before catalogs exist), do it manually instead:
+Если нужно создать бакет **без** запуска полного сида (например, чтобы
+позеленить хранилище до появления каталогов), сделайте это вручную:
 
-**Option A — MinIO console:** open http://localhost:9001, log in, and create a
-bucket named `svoya-igra`.
+**Вариант A — консоль MinIO:** откройте http://localhost:9001, войдите и
+создайте бакет с именем `svoya-igra`.
 
-**Option B — one-off `mc` container** (run while the stack is up):
+**Вариант B — разовый контейнер `mc`** (запускать, пока стек поднят):
 
 ```bash
 docker run --rm --network svoya-igra-backend_svoya-igra --entrypoint sh \
@@ -49,43 +50,45 @@ docker run --rm --network svoya-igra-backend_svoya-igra --entrypoint sh \
   && mc anonymous set download local/svoya-igra"
 ```
 
-`mc anonymous set download` makes objects publicly readable, matching the
-public-bucket model the frontend relies on. (The Compose network is named
-`<project>_svoya-igra`; the project name defaults to the repo folder
-`svoya-igra-backend`. Adjust if you renamed the folder.) Note this only creates
-an empty bucket — you still need `db:seed` to upload the QR assets and load the
-catalogs.
+`mc anonymous set download` делает объекты публично читаемыми, что соответствует
+модели публичного бакета, на которую полагается фронтенд. (Сеть Compose
+называется `<project>_svoya-igra`; имя проекта по умолчанию совпадает с папкой
+репозитория `svoya-igra-backend`. Поправьте, если переименовали папку.)
+Учтите, что так создаётся только пустой бакет — чтобы загрузить QR-ассеты и
+подгрузить каталоги, всё равно нужен `db:seed`.
 
-## Storage key & public URL conventions
+## Соглашения по storageKey и публичным URL
 
-These are defined in `src/infrastructure/storage/storage-key.helper.ts` and used
-across the storage seam:
+Они определены в `src/infrastructure/storage/storage-key.helper.ts` и
+используются по всему шву хранилища:
 
-- **QR tools** are global/static assets, so keys carry no room id:
-  `qr-tools/<qrToolId>.svg`. Written by `db:seed` (placeholder SVGs, one per QR
-  tool).
-- **Presentation uploads** are room/team-scoped runtime files:
-  `rooms/<roomId>/presentations/<teamId>/<submissionId>.<ext>`. Written when a
-  team captain uploads a presentation during the Presentation stage.
+- **QR-инструменты** — это глобальные/статические ассеты, поэтому ключи не несут
+  id комнаты: `qr-tools/<qrToolId>.svg`. Записываются `db:seed`
+  (placeholder-SVG, по одному на QR-инструмент).
+- **Загрузки презентаций** — это рантайм-файлы в области комнаты/команды:
+  `rooms/<roomId>/presentations/<teamId>/<submissionId>.<ext>`. Записываются,
+  когда капитан команды загружает презентацию на Этапе презентации.
 
-Public URLs are built from `MINIO_PUBLIC_URL` + bucket + key (path-style by
-default, `MINIO_PATH_STYLE=true`). `MINIO_PUBLIC_URL` is always a browser-facing
-host URL — it is **not** rewritten to the `minio` service name inside Compose.
+Публичные URL строятся из `MINIO_PUBLIC_URL` + бакет + ключ (по умолчанию
+path-style, `MINIO_PATH_STYLE=true`). `MINIO_PUBLIC_URL` — это всегда
+обращённый к браузеру host-URL; внутри Compose он **не** переписывается на имя
+сервиса `minio`.
 
-> **Port coupling:** `MINIO_PUBLIC_URL` hardcodes the S3 API port (`9000`). It is
-> independent of `MINIO_PORT`, so if you change `MINIO_PORT` you must update the
-> port in `MINIO_PUBLIC_URL` by hand to keep public links resolvable.
+> **Связанность портов:** `MINIO_PUBLIC_URL` зашивает порт S3 API (`9000`).
+> Он независим от `MINIO_PORT`, поэтому если вы меняете `MINIO_PORT`, порт в
+> `MINIO_PUBLIC_URL` нужно поправить вручную, чтобы публичные ссылки
+> оставались резолвимыми.
 
-## Known limitations
+## Известные ограничения
 
-- **The bucket is public-read by design (MVP).** Files (QR assets, uploaded
-  presentations) are served via plain anonymous public URLs. Signed URLs,
-  private buckets, a CDN, and serving uploads from a separate origin are all
-  **post-MVP** — fine for a single demo game, not for an untrusted public
-  deployment.
-- **Stored-XSS is already mitigated**, so the public bucket is not an open
-  hole: uploaded presentations are written with a server-canonical `Content-Type`
-  derived from the file extension (never the client-supplied MIME) plus
-  `Content-Disposition: attachment`, so a mislabelled HTML payload downloads
-  rather than executing when its public URL is opened (see
-  `src/infrastructure/storage/storage.service.ts`).
+- **Бакет публично-читаем по замыслу (MVP).** Файлы (QR-ассеты, загруженные
+  презентации) отдаются через простые анонимные публичные URL. Presigned URL,
+  приватные бакеты, CDN и отдача загрузок с отдельного origin — всё это
+  **post-MVP** — приемлемо для одной демо-игры, но не для публичного
+  развёртывания в недоверенной среде.
+- **Stored-XSS уже смягчена**, поэтому публичный бакет не является открытой
+  дырой: загруженные презентации записываются с серверно-каноническим
+  `Content-Type`, выведенным из расширения файла (никогда из MIME, присланного
+  клиентом), плюс `Content-Disposition: attachment`, так что HTML-payload с
+  неверной меткой при открытии публичного URL скачивается, а не исполняется
+  (см. `src/infrastructure/storage/storage.service.ts`).
