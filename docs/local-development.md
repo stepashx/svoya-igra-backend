@@ -170,4 +170,4 @@ docker compose build backend   # пересобрать образ после и
   событий находятся в [realtime-events.md](realtime-events.md), а чеклист ручного
   тестирования WebSocket — в [ws-testing.md](ws-testing.md).
 - **Развёртывание** — не здесь: отложено до выбора хостинга (см.
-  [README → Known limitations](../README.md#известные-ограничения)).
+  [README → Известные ограничения](../README.md#известные-ограничения)).
