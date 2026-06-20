@@ -1,450 +1,461 @@
-# Demo Walkthrough
+# Пошаговое демо
 
-A prose, step-by-step guide to bringing the backend up and **playing one full
-demo game** of *"Своя игра: собери презентацию проекта"* — from an empty lobby
-to a finished result with a leaderboard.
+Прозовый пошаговый гайд по запуску backend и **проведению одной полной
+демо-игры** *«Своя игра: собери презентацию проекта»* — от пустого лобби до
+готового результата с таблицей лидеров.
 
-This document is for the **demonstrator**: the person showing the backend off
-without a frontend. There is no UI here (this repo is backend only — see the
-[README](../README.md)), so a demo is a sequence of **REST calls** (driven from
-Swagger UI, `curl`, or Postman) while **watching the WebSocket events** that
-each call broadcasts. A real frontend consumes exactly the same surface; the
-[frontend integration guide](frontend-guide.md) is the consumer's-eye view of
-the very same flow.
+Этот документ — для **демонстратора**: того, кто показывает backend без
+фронтенда. Здесь нет UI (этот репозиторий — только backend, см.
+[README](../README.md)), поэтому демо — это последовательность **REST-вызовов**
+(из Swagger UI, `curl` или Postman) с **наблюдением за WebSocket-событиями**,
+которые рассылает каждый вызов. Реальный фронтенд использует ровно ту же
+поверхность; [гайд по интеграции фронтенда](frontend-guide.md) — это взгляд
+потребителя на тот же самый поток.
 
-The walkthrough below is the same path the automated acceptance test plays — it
-drives a room from `LOBBY` all the way to `RESULTS`/`FINISHED` through nothing
-but real REST endpoints. If you want the *programmatic* proof rather than a
-manual run, that test is
+Этот разбор проходит ровно тем же путём, что и автоматический acceptance-тест —
+он проводит комнату от `LOBBY` вплоть до `RESULTS`/`FINISHED` через одни лишь
+реальные REST-эндпоинты. Если вам нужно *программное* доказательство, а не
+ручной прогон, этот тест —
 [`test/acceptance/full-game.e2e-spec.ts`](../test/acceptance/full-game.e2e-spec.ts);
-this guide is its human-paced narration.
+данный гайд — его озвучка в человеческом темпе.
 
 ---
 
-## 1 · Prerequisites and bring-up
+## 1 · Предварительные требования и запуск
 
-You need the same toolchain the project uses everywhere — see the
-[README → Prerequisites](../README.md#prerequisites) and
-[README → Setup](../README.md#setup) for the canonical instructions; this is the
-short version:
+Вам нужен тот же toolchain, что используется в проекте повсюду — канонические
+инструкции см. в [README → Prerequisites](../README.md#предварительные-требования) и
+[README → Setup](../README.md#установка); здесь — краткая версия:
 
-- **Node.js 22** (LTS) and **npm**.
-- **Docker** + **Docker Compose v2** (`docker compose`), which provide
-  **PostgreSQL** and **MinIO**.
+- **Node.js 22** (LTS) и **npm**.
+- **Docker** + **Docker Compose v2** (`docker compose`), которые дают
+  **PostgreSQL** и **MinIO**.
 
-The fastest demo posture is the backend on the host with the infrastructure in
-Docker ([local-development → run mode B](local-development.md#run-mode-b--backend-on-host-infra-in-docker)):
+Самая быстрая конфигурация для демо — backend на хосте, а инфраструктура в
+Docker ([local-development → Режим запуска B](local-development.md#режим-запуска-b--бэкенд-на-хосте-инфраструктура-в-docker)):
 
 ```bash
-cp .env.example .env                  # local-dev defaults work out of the box
-docker compose up -d postgres minio   # start PostgreSQL + MinIO
-npm install                           # dependencies (incl. data-layer tooling)
-npm run db:migrate                    # create the schema
-npm run db:seed                       # load the demo catalog + provision the MinIO bucket
-npm run start:dev                     # run the backend with reload
+cp .env.example .env                  # дефолты для local-dev работают из коробки
+docker compose up -d postgres minio   # запустить PostgreSQL + MinIO
+npm install                           # зависимости (вкл. инструментарий слоя данных)
+npm run db:migrate                    # создать схему
+npm run db:seed                       # загрузить демо-каталог + создать бакет MinIO
+npm run start:dev                     # запустить backend с перезагрузкой
 ```
 
-`db:migrate` and `db:seed` run **on the host**, are **idempotent**, and `db:seed`
-is what provisions the MinIO bucket the presentation upload needs — skip it and
-the health check stays red and uploads fail. For all the variations (everything
-in Docker, the npm scripts, host-vs-container config) defer to the
-[README](../README.md) and [local-development.md](local-development.md) rather
-than re-deriving them here.
+`db:migrate` и `db:seed` выполняются **на хосте**, **идемпотентны**, и именно
+`db:seed` создаёт бакет MinIO, нужный для загрузки презентаций — пропустите его,
+и health-проверка останется красной, а загрузки будут падать. Все вариации (всё
+в Docker, npm-скрипты, конфигурация host-vs-container) см. в
+[README](../README.md) и [local-development.md](local-development.md), а не
+выводите их заново здесь.
 
-### What you get once it is up
+### Что вы получаете после запуска
 
-Everything is one process on one origin — the default `http://localhost:3000`
-(set by `PORT` in [`.env.example`](../.env.example)):
+Всё — один процесс на одном origin — по умолчанию `http://localhost:3000`
+(задаётся `PORT` в [`.env.example`](../.env.example)):
 
-| Surface | URL | Use it to |
+| Поверхность | URL | Зачем |
 |---|---|---|
-| **Swagger UI** | `http://localhost:3000/docs` | Browse and **execute** every REST endpoint (the primary demo driver) |
-| **Health** | `http://localhost:3000/api/health` | Confirm the stack is green (`200` = all reachable; `503` = a dependency or the bucket is missing) |
-| **WebSocket** | `http://localhost:3000` path `/socket.io` | Connect a Socket.IO client to watch the live events |
-| **MinIO console** | `http://localhost:9001` | Inspect uploaded presentation files (login `minioadmin` / `minioadmin`) |
+| **Swagger UI** | `http://localhost:3000/docs` | Просматривать и **выполнять** любой REST-эндпоинт (основной драйвер демо) |
+| **Health** | `http://localhost:3000/api/health` | Убедиться, что стек зелёный (`200` = всё доступно; `503` = отсутствует зависимость или бакет) |
+| **WebSocket** | `http://localhost:3000`, путь `/socket.io` | Подключить Socket.IO-клиент для наблюдения за живыми событиями |
+| **MinIO console** | `http://localhost:9001` | Просматривать загруженные файлы презентаций (логин `minioadmin` / `minioadmin`) |
 
-Before starting a game, open `http://localhost:3000/api/health` and confirm
-`status: "ok"`. A red `storage` check almost always means `db:seed` has not run
-yet (see [README → Health](../README.md#health) and [minio.md](minio.md)).
+Перед началом игры откройте `http://localhost:3000/api/health` и убедитесь, что
+`status: "ok"`. Красная проверка `storage` почти всегда означает, что `db:seed`
+ещё не запущен (см. [README → Health](../README.md#health) и [minio.md](minio.md)).
 
-### Demo caveats — read these first
+### Оговорки демо — прочитайте сначала
 
-- **One continuous session.** Socket presence and the answer / shop /
-  presentation timers live **in process memory** (see
-  [README → Known limitations](../README.md#known-limitations)). They are lost on
-  restart. **Do not restart the backend in the middle of a demo game** — run the
-  whole game in one uninterrupted process. (Room state itself is in PostgreSQL
-  and survives, but in-flight timers and socket presence do not.)
-- **The content is generic placeholder.** The catalog is "Категория 1",
-  "Вопрос — …", "Товар 1", "Тема 1". The demo showcases the **mechanics** (the
-  stage machine, scoring, shop, upload, defense, evaluation), not the subject
-  matter. Bring your own narration for the questions.
-- **QR assets are placeholders.** The six seeded QR tools are catalog
-  placeholders, not scannable codes — buying one proves the *commerce + private
-  inventory* mechanic, not a working QR.
-- **Real timers, not the test's fast ones.** The acceptance test swaps in a 2-second
-  shop window for speed; a live demo uses the real defaults from
-  [`.env.example`](../.env.example): an answer window of `60s`, a shop window of
-  `120s` that **cannot be closed before `SHOP_MIN_SECONDS=30`**, and a
-  presentation-prep window of `600s` (10 minutes). Plan for the 30-second
-  minimum-close wait each time you close the shop.
+- **Одна непрерывная сессия.** Присутствие сокетов и таймеры ответа / магазина /
+  презентации живут **в памяти процесса** (см.
+  [README → Известные ограничения](../README.md#известные-ограничения)). Они теряются при
+  перезапуске. **Не перезапускайте backend в середине демо-игры** — проводите всю
+  игру в одном непрерывном процессе. (Само состояние комнаты — в PostgreSQL и
+  переживает перезапуск, но таймеры в полёте и присутствие сокетов — нет.)
+- **Контент — обобщённые заглушки.** Каталог — это «Категория 1», «Вопрос — …»,
+  «Товар 1», «Тема 1». Демо показывает **механику** (машину стадий, подсчёт очков,
+  магазин, загрузку, защиту, оценивание), а не предметную область. Озвучку
+  вопросов привнесите свою.
+- **QR-ассеты — заглушки.** Шесть засеянных QR-инструментов — это заглушки
+  каталога, а не сканируемые коды; покупка одного из них доказывает механику
+  *коммерции + приватного инвентаря*, а не рабочий QR.
+- **Реальные таймеры, а не быстрые тестовые.** Acceptance-тест подменяет окно
+  магазина на 2 секунды ради скорости; живое демо использует реальные дефолты из
+  [`.env.example`](../.env.example): окно ответа `60s`, окно магазина `120s`,
+  которое **нельзя закрыть раньше `SHOP_MIN_SECONDS=30`**, и окно подготовки
+  презентации `600s` (10 минут). Закладывайте ожидание 30-секундного минимума на
+  закрытие каждый раз, когда закрываете магазин.
 
 ---
 
-## 2 · What is in the demo catalog
+## 2 · Что в демо-каталоге
 
-`npm run db:seed` loads a small, fixed catalog (the JSON under
-`src/infrastructure/database/seeds/data/`; see
-[migrations-and-seeds.md](migrations-and-seeds.md)). **Teams and players are
-not seeded** — they are created by live play. What you start with:
+`npm run db:seed` загружает маленький фиксированный каталог (JSON в
+`src/infrastructure/database/seeds/data/`; см.
+[migrations-and-seeds.md](migrations-and-seeds.md)). **Команды и игроки не
+засеваются сидами** — они создаются живой игрой. С чего вы начинаете:
 
-| Catalog | Count | Shape |
+| Каталог | Кол-во | Что это |
 |---|---|---|
-| **Categories** | 6 | "Категория 1" … "Категория 6" |
-| **Questions** | 30 | Six per tier at **100 / 200 / 400 / 600 / 800** points — a **6 × 5 board** |
-| **Shop items** | 6 | "Товар 1" … "Товар 6", priced **100 → 600** in steps of 100, each tied to a QR tool |
-| **QR tools** | 6 | "QR-инструмент 1" … "6" (placeholder assets) |
-| **Presentation topics** | 4 | "Тема 1" … "Тема 4" — what a team optionally picks in `TEAM_SETUP` |
-| **Presentation requirements** | 4 | "Условие 1" … "4" (three required, one optional) — shown in `PRESENTATION_PREPARATION` |
-| **Evaluation criteria** | 2 | **"Раскрытие темы"** and **"Дизайн презентации"**, each scored **0–10** |
+| **Категории** | 6 | "Категория 1" … "Категория 6" |
+| **Вопросы** | 30 | Шесть на каждый номинал по **100 / 200 / 400 / 600 / 800** очков — **поле 6 × 5** |
+| **Товары магазина** | 6 | "Товар 1" … "Товар 6", цена **100 → 600** шагом по 100, каждый привязан к QR-инструменту |
+| **QR-инструменты** | 6 | "QR-инструмент 1" … "6" (ассеты-заглушки) |
+| **Темы презентаций** | 4 | "Тема 1" … "Тема 4" — то, что команда опционально выбирает в `TEAM_SETUP` |
+| **Требования к презентации** | 4 | "Условие 1" … "4" (три обязательных, одно опциональное) — показываются в `PRESENTATION_PREPARATION` |
+| **Критерии оценивания** | 2 | **"Раскрытие темы"** и **"Дизайн презентации"**, каждый оценивается **0–10** |
 
-The board is the heart of the demo: **6 categories × 5 tiers = 30 cells**. The
-question and answer text is generic, so the host can accept or reject answers at
-will — correctness is the host's call, not the catalog's.
+Поле — сердце демо: **6 категорий × 5 номиналов = 30 ячеек**. Текст вопросов и
+ответов обобщённый, поэтому ведущий может принимать или отклонять ответы по
+своему усмотрению — правильность решает ведущий, а не каталог.
 
 ---
 
-## 3 · How to drive the backend without a frontend
+## 3 · Как управлять backend без фронтенда
 
-A demo is **REST calls + watching WebSocket events**. Pick whichever driver
-suits your audience:
+Демо — это **REST-вызовы + наблюдение за WebSocket-событиями**. Выберите драйвер
+под свою аудиторию:
 
-- **Swagger UI (`/docs`)** — the recommended driver. Every endpoint is listed
-  with its request/response shapes, and **"Try it out"** executes it live
-  against the `/api` base. Attach the auth header (below) per request.
-- **`curl` / Postman** — fine for a scripted or terminal-first demo. Postman
-  also has a Socket.IO client if you want events in the same tool.
+- **Swagger UI (`/docs`)** — рекомендуемый драйвер. Каждый эндпоинт перечислен с
+  формами запроса/ответа, а **«Try it out»** выполняет его вживую против базы
+  `/api`. Прикладывайте заголовок авторизации (ниже) к каждому запросу.
+- **`curl` / Postman** — годятся для скриптового или терминал-первого демо. У
+  Postman также есть Socket.IO-клиент, если хотите видеть события в том же
+  инструменте.
 
-**Authentication is two opaque tokens, issued once.** There is no login. Full
-detail is in [frontend-guide → §2](frontend-guide.md#2--authentication); the demo
-essentials:
+**Авторизация — это два непрозрачных токена, выдаваемые один раз.** Логина нет.
+Полная детализация в [frontend-guide → §2](frontend-guide.md#2--аутентификация);
+суть для демо:
 
-| | Host token | Player token |
+| | Токен ведущего | Токен игрока |
 |---|---|---|
-| Comes from | `POST /api/rooms` (field `hostReconnectToken`) | `POST /api/rooms/:code/players` (field `reconnectToken`) |
-| REST header | `X-Host-Token` | `X-Player-Token` |
+| Откуда | `POST /api/rooms` (поле `hostReconnectToken`) | `POST /api/rooms/:code/players` (поле `reconnectToken`) |
+| REST-заголовок | `X-Host-Token` | `X-Player-Token` |
 
-> **Save every token the instant you read it.** Each token is returned **exactly
-> once**, in the body of the create/join call, and is **never re-issued**
-> ([frontend-guide → §2.2](frontend-guide.md#22--tokens-are-issued-once--save-them)).
-> Lose it and that identity is gone. Keep a scratch note mapping each name to its
-> token — you will reuse the host token for every host action and each player's
-> token for that player's actions throughout the game. **This is the single most
-> common demo mistake.**
+> **Сохраняйте каждый токен в тот же миг, как прочитали его.** Каждый токен
+> возвращается **ровно один раз**, в теле вызова create/join, и **никогда не
+> выдаётся повторно**
+> ([frontend-guide → §2.2](frontend-guide.md#22--токены-выдаются-один-раз--сохраните-их)).
+> Потеряете — и эта идентичность пропала. Держите черновую заметку с соответствием
+> каждого имени своему токену — вы будете переиспользовать токен ведущего для
+> каждого действия ведущего и токен каждого игрока для действий этого игрока на
+> протяжении всей игры. **Это самая частая ошибка демо.**
 
-**Watching events.** Open a Socket.IO client (a browser console or a small Node
-snippet — the connection recipe is in
-[frontend-guide → §5.1](frontend-guide.md#51--connecting)) with
-`auth.reconnectToken` set to the host token. On connect the backend auto-joins
-your room and replays a `room-state` snapshot, then streams the live events. If
-you connect **without** a token you see nothing until you send
-`client:realtime:join-room` for the room id — and even then only the room-wide
-events, never the host-only or team-only ones
-([frontend-guide → §2.5](frontend-guide.md#25--the-anonymous-socket-spectator)).
-For the exact event names, audiences, and payloads, keep
-[realtime-events.md](realtime-events.md) open. If you would rather not wire a
-socket at all, every event below has a **REST mirror** — `GET
-/api/rooms/:code/game/state`, `/board`, `/status`, and `/game/stage` expose the
-same state the events announce.
+**Наблюдение за событиями.** Откройте Socket.IO-клиент (консоль браузера или
+небольшой Node-сниппет — рецепт подключения в
+[frontend-guide → §5.1](frontend-guide.md#51--подключение)) с
+`auth.reconnectToken`, установленным в токен ведущего. При подключении backend
+автоматически присоединяет вас к комнате и проигрывает снимок `room-state`, затем
+стримит живые события. Если вы подключаетесь **без** токена, вы не видите ничего,
+пока не отправите `client:realtime:join-room` с id комнаты — и даже тогда только
+события «всем в комнате», но никогда «только ведущему» или «только команде»
+([frontend-guide → §2.5](frontend-guide.md#25--анонимный-сокет-зритель)).
+Точные имена событий, аудитории и payload'ы держите открытыми в
+[realtime-events.md](realtime-events.md). Если же вы предпочитаете вовсе не
+подключать сокет, у каждого события ниже есть **REST-зеркало** — `GET
+/api/rooms/:code/game/state`, `/board`, `/status` и `/game/stage` отдают то же
+состояние, о котором объявляют события.
 
-In the walkthrough, "**watch**" lists the events by their friendly names; their
-fully-qualified form is `server:<area>:<name>` (e.g. `player-joined` →
+В разборе «**смотрите**» перечисляет события по их дружелюбным именам; их
+полная форма — `server:<area>:<name>` (например, `player-joined` →
 `server:game-session:player-joined`).
 
 ---
 
-## 4 · The demo game, step by step
+## 4 · Демо-игра, шаг за шагом
 
-This is the core of the document: one full game, narrated as a human runs it.
-Each step names **the call** (method + `/api/...` path + which token), **the
-transition** it causes, and **the events to watch**. It mirrors the seven
-scenarios in [frontend-guide → §4](frontend-guide.md#4--scenarios-rest--ws-end-to-end)
-and the live run in
+Это ядро документа: одна полная игра, озвученная так, как её проводит человек.
+Каждый шаг называет **вызов** (метод + путь `/api/...` + какой токен),
+**переход**, который он вызывает, и **события для наблюдения**. Он отражает семь
+сценариев из [frontend-guide → §4](frontend-guide.md#4--сценарии-rest--ws-сквозные)
+и живой прогон в
 [`test/acceptance/full-game.e2e-spec.ts`](../test/acceptance/full-game.e2e-spec.ts).
-For exact request bodies and response DTOs, follow each call into **Swagger
+За точными телами запросов и DTO ответов идите по каждому вызову в **Swagger
 (`/docs`)**.
 
-A note on response codes that trips people up: the **creating** POSTs (`/rooms`,
-`/players`, `/teams`, `/teams/:id/members`) return **201**; every **game-action**
-POST returns **200** ([frontend-guide → §4](frontend-guide.md#4--scenarios-rest--ws-end-to-end)).
+Заметка о кодах ответа, на которой спотыкаются: **создающие** POST'ы (`/rooms`,
+`/players`, `/teams`, `/teams/:id/members`) возвращают **201**; каждый POST
+**игрового действия** возвращает **200** ([frontend-guide → §4](frontend-guide.md#4--сценарии-rest--ws-сквозные)).
 
-### Act 1 — Lobby → board
+### Акт 1 — Лобби → поле
 
-The room walks `LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD`.
+Комната проходит `LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD`.
 
-1. **Create the room** — `POST /api/rooms` *(no auth)*. The reply carries the
-   room **`code`** and the **`hostReconnectToken`** — **save both**. Stage:
+1. **Создайте комнату** — `POST /api/rooms` *(без авторизации)*. Ответ несёт
+   **`code`** комнаты и **`hostReconnectToken`** — **сохраните оба**. Стадия:
    `LOBBY`.
-2. **Players join** — `POST /api/rooms/:code/players` *(no auth)*, once per
-   person, with a display name. Each reply carries that player's
-   **`reconnectToken`** — **save each one**. Watch: room-wide `player-joined`.
-   *(The minimum is two players, one per team — say Alice and Bob.)*
-3. **Create teams** — `POST /api/rooms/:code/teams` *(`X-Player-Token`)*. **The
-   player who creates a team becomes its captain.** Have Alice create "Reds" and
-   Bob create "Blues". Watch: `team-created`; the **first** team also fires
-   `game-stage-changed` → **`TEAM_SETUP`**. *(Extra players can join an existing
-   team with `POST /api/rooms/:code/teams/:teamId/members`, firing `team-joined`
+2. **Игроки присоединяются** — `POST /api/rooms/:code/players` *(без
+   авторизации)*, по разу на человека, с отображаемым именем. Каждый ответ несёт
+   **`reconnectToken`** этого игрока — **сохраните каждый**. Смотрите: всем в
+   комнате `player-joined`.
+   *(Минимум — два игрока, по одному на команду — скажем, Alice и Bob.)*
+3. **Создайте команды** — `POST /api/rooms/:code/teams` *(`X-Player-Token`)*.
+   **Игрок, создавший команду, становится её капитаном.** Пусть Alice создаст
+   "Reds", а Bob — "Blues". Смотрите: `team-created`; **первая** команда также
+   запускает `game-stage-changed` → **`TEAM_SETUP`**. *(Дополнительные игроки
+   могут присоединиться к существующей команде через
+   `POST /api/rooms/:code/teams/:teamId/members`, запуская `team-joined`
    + `team-updated`.)*
-4. **Pick a topic (optional)** — read the four presentation topics from
-   `GET /api/topics` *(no auth)*, then `PATCH /api/rooms/:code/teams/:teamId/topic`
-   *(`X-Player-Token`, the captain)*. Watch: `team-topic-selected`. A team that
-   skips this is **auto-assigned** a topic at game start, so you can demo both
-   paths (e.g. Reds picks, Blues leaves it).
-5. **Ready up** — each captain calls
-   `PATCH /api/rooms/:code/teams/:teamId/ready` *(`X-Player-Token`)* with
-   `isReady: true`. Watch: `team-ready-changed` and `game-can-start-changed`. When
-   the ready count reaches **`MIN_TEAMS_TO_START` (2)**, also
+4. **Выберите тему (опционально)** — прочитайте четыре темы презентаций из
+   `GET /api/topics` *(без авторизации)*, затем
+   `PATCH /api/rooms/:code/teams/:teamId/topic`
+   *(`X-Player-Token`, капитан)*. Смотрите: `team-topic-selected`. Команде,
+   которая это пропускает, тема **назначается автоматически** при старте игры,
+   так что можно показать оба пути (например, Reds выбирает, Blues оставляет
+   как есть).
+5. **Подтвердите готовность** — каждый капитан вызывает
+   `PATCH /api/rooms/:code/teams/:teamId/ready` *(`X-Player-Token`)* с
+   `isReady: true`. Смотрите: `team-ready-changed` и `game-can-start-changed`.
+   Когда число готовых достигает **`MIN_TEAMS_TO_START` (2)**, также
    `game-stage-changed` → **`READY_CHECK`**.
-6. **Start the game** — `POST /api/rooms/:code/game/start` *(`X-Host-Token`)*.
-   Watch a burst: `game-started`, `game-first-team-selected`,
+6. **Запустите игру** — `POST /api/rooms/:code/game/start` *(`X-Host-Token`)*.
+   Смотрите всплеск: `game-started`, `game-first-team-selected`,
    `game-stage-changed` → **`GAME_BOARD`**, `game-turn-changed`,
-   `game-state-updated`. Turn order is now assigned to both teams.
+   `game-state-updated`. Порядок хода теперь назначен обеим командам.
 
-At this point `GET /api/rooms/:code/game/stage` returns `GAME_BOARD`, and `GET
-/api/rooms/:code/board` returns the 30-cell board. (Scenario detail:
-[frontend-guide → §4.1](frontend-guide.md#41--lobby).)
+В этот момент `GET /api/rooms/:code/game/stage` возвращает `GAME_BOARD`, а `GET
+/api/rooms/:code/board` возвращает поле из 30 ячеек. (Детали сценария:
+[frontend-guide → §4.1](frontend-guide.md#41--лобби).)
 
-### Act 2 — The battle cycle (repeated until the board is exhausted)
+### Акт 2 — Боевой цикл (повторяется, пока поле не исчерпано)
 
-Each cell is one cycle. The **active team** is whichever team's turn it is —
-read it from `currentTeamId` in `GET /api/rooms/:code/game/state`; the turn
-**alternates after every review**, accepted or rejected.
+Каждая ячейка — один цикл. **Активная команда** — та, чей сейчас ход; читайте её
+из `currentTeamId` в `GET /api/rooms/:code/game/state`; ход **чередуется после
+каждой проверки**, принятой или отклонённой.
 
-1. **Select a cell** — `POST /api/rooms/:code/board/select` *(`X-Player-Token`,
-   the active team's captain)* with the cell id. Watch: **host-only**
-   `cell-selection-requested` (a player socket will not see this).
-2. **Host opens the question** — `POST /api/rooms/:code/questions/open`
-   *(`X-Host-Token`)*. Stage → **`QUESTION_OPENED`**. Watch:
-   `cell-selection-approved`, `question-opened` (the question text, **without**
-   the correct answer), `question-timer-started`. *(The host may instead reject
-   the pick with `POST /api/rooms/:code/questions/reject`, returning the captain
-   to the board.)*
-3. **Captain answers** — `POST /api/rooms/:code/questions/answer`
-   *(`X-Player-Token`)* with the answer text. Stage → **`ANSWER_REVIEW`**.
-   Watch: room-wide `answer-submitted` — note this **carries the answer text** to
-   the whole room (a live echo, not persisted).
-4. **Host reviews** — `POST /api/rooms/:code/questions/review` *(`X-Host-Token`)*
-   with `accepted: true` (or `false`). Watch: `answer-accepted` /
-   `answer-rejected`; **on accept** then `score-changed` (positive delta = the
-   cell's points credited to the active team), `cell-blocked`,
+1. **Выберите ячейку** — `POST /api/rooms/:code/board/select` *(`X-Player-Token`,
+   капитан активной команды)* с id ячейки. Смотрите: **только ведущему**
+   `cell-selection-requested` (сокет игрока этого не увидит).
+2. **Ведущий открывает вопрос** — `POST /api/rooms/:code/questions/open`
+   *(`X-Host-Token`)*. Стадия → **`QUESTION_OPENED`**. Смотрите:
+   `cell-selection-approved`, `question-opened` (текст вопроса, **без**
+   правильного ответа), `question-timer-started`. *(Ведущий может вместо этого
+   отклонить выбор через `POST /api/rooms/:code/questions/reject`, вернув
+   капитана к полю.)*
+3. **Капитан отвечает** — `POST /api/rooms/:code/questions/answer`
+   *(`X-Player-Token`)* с текстом ответа. Стадия → **`ANSWER_REVIEW`**.
+   Смотрите: всем в комнате `answer-submitted` — учтите, что оно **несёт текст
+   ответа** всей комнате (живое эхо, не персистится).
+4. **Ведущий проводит проверку ответа** — `POST /api/rooms/:code/questions/review`
+   *(`X-Host-Token`)* с `accepted: true` (или `false`). Смотрите: `answer-accepted` /
+   `answer-rejected`; **при принятии** затем `score-changed` (положительная
+   дельта = очки ячейки зачислены активной команде), `cell-blocked`,
    `game-turn-changed`, `board-state-updated`.
 
-**There is no auto-advance.** The 60-second answer timer is informational — there
-is no server scheduler. If you want to demo a timeout instead of an answer, the
-host bridges it with `POST /api/rooms/:code/game/advance` *(`X-Host-Token`)*,
-which fires `question-timer-ended` and moves the room to `ANSWER_REVIEW`.
+**Авто-продвижения нет.** 60-секундный таймер ответа информационный — серверного
+планировщика нет. Если хотите показать таймаут вместо ответа, ведущий перекидывает
+его через `POST /api/rooms/:code/game/advance` *(`X-Host-Token`)*, который
+запускает `question-timer-ended` и переводит комнату в `ANSWER_REVIEW`.
 
-**The shop fork.** After a review, the room enters the **shop** if the count of
-blocked cells is a multiple of 6 — i.e. on the **6th, 12th, 18th, 24th, and 30th**
-answered question — *or* when the board is exhausted (that last fork is what ends
-the battle phase; see Act 4). Otherwise it returns to `GAME_BOARD` for the next
-team. This is **fork A** in
-[frontend-guide → §3.5](frontend-guide.md#35--the-three-forks); the
-[scenario](frontend-guide.md#42--battle) has the full event list.
+**Развилка магазина.** После проверки комната входит в **магазин**, если число
+заблокированных ячеек кратно 6 — то есть на **6-м, 12-м, 18-м, 24-м и 30-м**
+отвеченном вопросе — *или* когда поле исчерпано (эта последняя развилка и
+завершает боевую фазу; см. Акт 4). Иначе она возвращается в `GAME_BOARD` для
+следующей команды. Это **развилка A** в
+[frontend-guide → §3.5](frontend-guide.md#35--три-развилки); полный список
+событий — в [сценарии](frontend-guide.md#42--бой).
 
-### Act 3 — The shop
+### Акт 3 — Магазин
 
-When the fork fires, the room is in **`SHOP`** and `shop-opened` (or
-`shop-final-opened`, on the exhausted board) arrives last in the review block.
+Когда срабатывает развилка, комната в **`SHOP`**, и `shop-opened` (или
+`shop-final-opened`, на исчерпанном поле) приходит последним в блоке проверки.
 
-1. **Read the catalog** — `GET /api/rooms/:code/shop/items` and
-   `GET /api/rooms/:code/shop/round` *(no auth)*. The round tells you whether
-   this is the **final** shop and exposes the timer.
-2. **Buy an item** — `POST /api/rooms/:code/shop/purchase` *(`X-Player-Token`,
-   a captain buying for their own team)*. Watch: room-wide `score-changed` with a
-   **negative** delta (only `balance` moves; the earned score holds),
-   `shop-item-purchased`, `shop-state-updated` — **all without any QR content** —
-   and then, **after commit**, a **team-only** `inventory-updated` carrying the
-   QR `publicUrl`. The QR stays private to the buying team by design
-   ([frontend-guide → §6](frontend-guide.md#6--files)).
-3. **Host closes the shop** — `POST /api/rooms/:code/shop/close`
-   *(`X-Host-Token`)*. Remember the **30-second minimum** (`SHOP_MIN_SECONDS`):
-   a close attempted earlier is rejected — wait it out. Watch: `shop-closed`,
-   carrying the `nextStage`. A **regular** shop returns to `GAME_BOARD` (resume
-   Act 2); the **final** shop moves on to `PRESENTATION_PREPARATION` (this is
-   **fork B**). Scenario: [frontend-guide → §4.3](frontend-guide.md#43--shop).
+1. **Прочитайте каталог** — `GET /api/rooms/:code/shop/items` и
+   `GET /api/rooms/:code/shop/round` *(без авторизации)*. Раунд сообщает, является
+   ли этот магазин **финальным**, и отдаёт таймер.
+2. **Купите товар** — `POST /api/rooms/:code/shop/purchase` *(`X-Player-Token`,
+   капитан, покупающий для своей команды)*. Смотрите: всем в комнате
+   `score-changed` с **отрицательной** дельтой (двигается только `balance`;
+   заработанные очки держатся), `shop-item-purchased`, `shop-state-updated` —
+   **всё без какого-либо QR-контента** — и затем, **после commit**, **только
+   команде** `inventory-updated`, несущий `publicUrl` QR. QR остаётся приватным
+   для покупающей команды по замыслу
+   ([frontend-guide → §6](frontend-guide.md#6--файлы)).
+3. **Ведущий закрывает магазин** — `POST /api/rooms/:code/shop/close`
+   *(`X-Host-Token`)*. Помните про **30-секундный минимум** (`SHOP_MIN_SECONDS`):
+   попытка закрытия раньше отклоняется — переждите. Смотрите: `shop-closed`,
+   несущий `nextStage`. **Обычный** магазин возвращается в `GAME_BOARD`
+   (возобновить Акт 2); **финальный** магазин переходит к
+   `PRESENTATION_PREPARATION` (это **развилка B**). Сценарий:
+   [frontend-guide → §4.3](frontend-guide.md#43--магазин).
 
-### Act 4 — Presentation: preparation and upload
+### Акт 4 — Презентация: подготовка и загрузка
 
-The battle phase ends only when **all 30 cells are blocked**: the last answer
-opens the **final shop**, and closing it transitions the room to
-**`PRESENTATION_PREPARATION`**. (There is no shortcut out of the board — see
-[§5](#5--the-short-demo-and-the-one-hard-rule).)
+Боевая фаза завершается только когда **все 30 ячеек заблокированы**: последний
+ответ открывает **финальный магазин**, а его закрытие переводит комнату в
+**`PRESENTATION_PREPARATION`**. (Короткого пути с поля нет — см.
+[§5](#5--короткое-демо-и-одно-жёсткое-правило).)
 
-1. **Host opens preparation** — `POST /api/rooms/:code/presentation/start-preparation`
-   *(`X-Host-Token`)*. Watch: room-wide `preparation-started` then
-   `timer-started`. The prep window is `PRESENTATION_PREP_SECONDS` (10 minutes);
-   read the deadline at `GET /api/rooms/:code/presentation/deadline`. The four
-   "Условие" requirements are at `GET /api/rooms/:code/presentation/requirements`.
-2. **Captains upload** — `POST /api/rooms/:code/presentation/upload`
-   *(`X-Player-Token`, multipart form field **`file`**)*. Allowed formats are
-   `pdf, ppt, pptx`, up to `MAX_FILE_SIZE_MB` (25 MB). Watch: after commit,
-   room-wide `submission-uploaded`, then `submission-late` **only if** the upload
-   was past the deadline (which applies `LATE_PENALTY=1`), then `files-updated`.
-   The reply includes the file's `publicUrl`.
-3. **Replace if needed** — `PUT /api/rooms/:code/presentation/upload` *(same
-   token, multipart)* upserts the same row in place. Watch: `submission-replaced`
-   then `files-updated`.
-4. **Verify** — `GET /api/rooms/:code/presentation/submissions` (or `/files`)
-   lists what was uploaded; the files are **public** by design
-   ([frontend-guide → §6](frontend-guide.md#6--files)) and visible in the MinIO
-   console. Scenario: [frontend-guide → §4.4](frontend-guide.md#44--presentation).
+1. **Ведущий открывает подготовку** — `POST /api/rooms/:code/presentation/start-preparation`
+   *(`X-Host-Token`)*. Смотрите: всем в комнате `preparation-started`, затем
+   `timer-started`. Окно подготовки — `PRESENTATION_PREP_SECONDS` (10 минут);
+   читайте дедлайн в `GET /api/rooms/:code/presentation/deadline`. Четыре
+   требования "Условие" — в `GET /api/rooms/:code/presentation/requirements`.
+2. **Капитаны загружают** — `POST /api/rooms/:code/presentation/upload`
+   *(`X-Player-Token`, поле multipart-формы **`file`**)*. Разрешённые форматы —
+   `pdf, ppt, pptx`, до `MAX_FILE_SIZE_MB` (25 MB). Смотрите: после commit, всем
+   в комнате `submission-uploaded`, затем `submission-late` **только если**
+   загрузка прошла после дедлайна (что применяет `LATE_PENALTY=1`), затем
+   `files-updated`. Ответ включает `publicUrl` файла.
+3. **Замените при необходимости** — `PUT /api/rooms/:code/presentation/upload`
+   *(тот же токен, multipart)* делает upsert той же строки на месте. Смотрите:
+   `submission-replaced`, затем `files-updated`.
+4. **Проверьте** — `GET /api/rooms/:code/presentation/submissions` (или `/files`)
+   перечисляет, что было загружено; файлы **публичны** по замыслу
+   ([frontend-guide → §6](frontend-guide.md#6--файлы)) и видны в консоли MinIO.
+   Сценарий: [frontend-guide → §4.4](frontend-guide.md#44--презентация).
 
-### Act 5 — Defense
+### Акт 5 — Защита
 
-1. **Host opens defenses** — `POST /api/rooms/:code/defense/start`
-   *(`X-Host-Token`)*. Stage → **`PRESENTATION_DEFENSE`**. The reply carries the
-   `order` (participating teams by ascending turn order) and the first
-   `currentPresenterTeamId`. Watch: `defense:started` (with the whole order) then
+1. **Ведущий открывает защиты** — `POST /api/rooms/:code/defense/start`
+   *(`X-Host-Token`)*. Стадия → **`PRESENTATION_DEFENSE`**. Ответ несёт `order`
+   (участвующие команды по возрастанию порядка хода) и первый
+   `currentPresenterTeamId`. Смотрите: `defense:started` (со всем порядком), затем
    `defense:team-started`.
-2. **Advance presenters** — `POST /api/rooms/:code/defense/finish-presenter`
-   (or `.../skip-presenter`) *(`X-Host-Token`)*, once per team. Watch:
-   `defense:team-finished` (or `…-skipped`), then `defense:team-started` for the
-   **next** presenter. The queue is **finite — it does not wrap**.
-3. **The last presenter** — finishing the final team fires `defense:finished`
-   (`nextStage: EVALUATION`) instead of a `team-started`, and the room moves
-   itself to **`EVALUATION`** (this is **fork C**). The defense state is fully
-   **derived** — `GET /api/rooms/:code/defense/state` recomputes it, so a host
-   reconnect mid-defense (`POST /api/rooms/:code/host/reconnect`) resumes exactly
-   where it was. Scenario: [frontend-guide → §4.5](frontend-guide.md#45--defense).
+2. **Продвигайте докладчиков** — `POST /api/rooms/:code/defense/finish-presenter`
+   (или `.../skip-presenter`) *(`X-Host-Token`)*, по разу на команду. Смотрите:
+   `defense:team-finished` (или `…-skipped`), затем `defense:team-started` для
+   **следующего** докладчика. Очередь **конечна — она не зацикливается**.
+3. **Последний докладчик** — завершение финальной команды запускает
+   `defense:finished` (`nextStage: EVALUATION`) вместо `team-started`, и комната
+   сама переходит в **`EVALUATION`** (это **развилка C**). Состояние защиты
+   полностью **производное** — `GET /api/rooms/:code/defense/state` пересчитывает его,
+   поэтому переподключение ведущего посреди защиты
+   (`POST /api/rooms/:code/host/reconnect`) возобновляет ровно с того места, где
+   было. Сценарий: [frontend-guide → §4.5](frontend-guide.md#45--защита).
 
-### Act 6 — Evaluation
+### Акт 6 — Оценивание
 
-Each team and the host score **the other teams** against the two criteria.
+Каждая команда и ведущий оценивают **остальные команды** по двум критериям.
 
-1. **Read the criteria** — `GET /api/rooms/:code/evaluation/criteria` and the
-   targets at `GET /api/rooms/:code/evaluation/teams` *(no auth)*. Progress is at
-   `GET /api/rooms/:code/evaluation/progress` (**counts only**, no numbers).
-2. **Submit scores** — captains call `POST /api/rooms/:code/evaluation/team`
-   *(`X-Player-Token`)* and the host calls `POST /api/rooms/:code/evaluation/host`
-   *(`X-Host-Token`)*, each with a `targetTeamId` and a score per criterion (e.g.
-   `topicScore`, `designScore`). A team **cannot evaluate itself**. Watch:
-   `score-submitted` then `progress-updated` — **neither carries a numeric
-   score**; your own numbers come back only in the POST reply.
-3. **Confirm** — `POST /api/rooms/:code/evaluation/team/confirm` and
-   `.../host/confirm` *(matching token)*. Watch: `score-confirmed` (one per frozen
-   row) then `progress-updated`. Confirm per target, or all-at-once by omitting
-   `targetTeamId`.
-4. **Check the gate** — `GET /api/rooms/:code/evaluation/progress` should now
-   report `complete: true` once every participating team has been scored and
-   confirmed. Scenario:
-   [frontend-guide → §4.6](frontend-guide.md#46--evaluation--results).
+1. **Прочитайте критерии** — `GET /api/rooms/:code/evaluation/criteria` и цели в
+   `GET /api/rooms/:code/evaluation/teams` *(без авторизации)*. Прогресс — в
+   `GET /api/rooms/:code/evaluation/progress` (**только счётчики**, без чисел).
+2. **Отправьте оценки** — капитаны вызывают `POST /api/rooms/:code/evaluation/team`
+   *(`X-Player-Token`)*, а ведущий вызывает `POST /api/rooms/:code/evaluation/host`
+   *(`X-Host-Token`)*, каждый с `targetTeamId` и оценкой по каждому критерию
+   (например, `topicScore`, `designScore`). Команда **не может оценивать себя**.
+   Смотрите: `score-submitted`, затем `progress-updated` — **ни одно не несёт
+   числовой оценки**; ваши собственные числа возвращаются только в ответе POST.
+3. **Подтвердите** — `POST /api/rooms/:code/evaluation/team/confirm` и
+   `.../host/confirm` *(соответствующий токен)*. Смотрите: `score-confirmed` (по
+   одному на замороженную строку), затем `progress-updated`. Подтверждайте по
+   каждой цели или все сразу, опустив `targetTeamId`.
+4. **Проверьте гейт** — `GET /api/rooms/:code/evaluation/progress` теперь должен
+   сообщать `complete: true`, как только каждая участвующая команда оценена и
+   подтверждена. Сценарий:
+   [frontend-guide → §4.6](frontend-guide.md#46--оценивание-и-результаты).
 
-### Act 7 — Results and finish
+### Акт 7 — Результаты и финиш
 
-1. **Calculate results** — `POST /api/rooms/:code/evaluation/results`
-   *(`X-Host-Token`)*. With every participating team ready, send an **empty body**
-   — no `{ "force": true }` is needed (the Stage 12 liveness fix counts
-   participating teams, so the gate is reachable on a normal complete game). Stage
-   → **`RESULTS`** and the room's **`status` becomes `FINISHED`** in the same
-   call. Watch, **after commit and in this order**: room-wide `completed`
-   (stage `RESULTS`, status `FINISHED`) then `results-calculated` (the public
-   leaderboard aggregates).
-2. **Read the leaderboard** — `GET /api/rooms/:code/evaluation/results`
-   *(no auth)*. It returns each team's `earnedScore`, the presentation score
-   (raw, late penalty, final), the `finalScore`, and a dense `place`. Individual
-   evaluator scores stay private. This read still works on a `FINISHED` room.
-3. **Confirm the finish** — `GET /api/rooms/:code/status` returns
-   `status: "FINISHED"` on `currentStage: "RESULTS"`. (`FINISHED` is a room
-   **status**, never a stage you will observe — see
-   [frontend-guide → §3.2](frontend-guide.md#32--status-vs-stage--orthogonal).)
-   The game is over. A late `POST /api/rooms/:code/close` against the finished
-   room is cleanly rejected with `409 ROOM_NOT_ACTIVE` — the finish won, nothing
-   is corrupted.
+1. **Посчитайте результаты** — `POST /api/rooms/:code/evaluation/results`
+   *(`X-Host-Token`)*. Когда каждая участвующая команда готова, отправьте
+   **пустое тело** — `{ "force": true }` не нужно (фикс живости из Этапа 12
+   считает участвующие команды, поэтому гейт достижим на нормальной полной игре).
+   Стадия → **`RESULTS`**, и **`status` комнаты становится `FINISHED`** в том же
+   вызове. Смотрите, **после commit и в этом порядке**: всем в комнате `completed`
+   (стадия `RESULTS`, статус `FINISHED`), затем `results-calculated` (публичные
+   агрегаты таблицы лидеров).
+2. **Прочитайте таблицу лидеров** — `GET /api/rooms/:code/evaluation/results`
+   *(без авторизации)*. Она возвращает `earnedScore` каждой команды, очки
+   презентации (raw, late penalty, final), `finalScore` и плотное `place`.
+   Индивидуальные оценки оценщиков остаются приватными. Это чтение по-прежнему
+   работает на `FINISHED`-комнате.
+3. **Подтвердите финиш** — `GET /api/rooms/:code/status` возвращает
+   `status: "FINISHED"` при `currentStage: "RESULTS"`. (`FINISHED` — это **статус**
+   комнаты, а не стадия, которую вы будете наблюдать — см.
+   [frontend-guide → §3.2](frontend-guide.md#32--статус-против-стадии--ортогональны).)
+   Игра окончена. Поздний `POST /api/rooms/:code/close` против завершённой комнаты
+   чисто отклоняется с `409 ROOM_NOT_ACTIVE` — финиш победил, ничего не
+   повреждено.
 
-That is a complete game: `LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD →
-(QUESTION_OPENED → ANSWER_REVIEW)×30 with SHOP at every 6th block →
-PRESENTATION_PREPARATION → PRESENTATION_DEFENSE → EVALUATION → RESULTS`, status
+Это полная игра: `LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD →
+(QUESTION_OPENED → ANSWER_REVIEW)×30 с SHOP на каждой 6-й блокировке →
+PRESENTATION_PREPARATION → PRESENTATION_DEFENSE → EVALUATION → RESULTS`, статус
 `FINISHED`.
 
 ---
 
-## 5 · The short demo, and the one hard rule
+## 5 · Короткое демо и одно жёсткое правило
 
-A full board is **30 cells**. The state machine has **one hard constraint**
-worth knowing before you plan a short demo:
+Полное поле — это **30 ячеек**. У машины состояний есть **одно жёсткое
+ограничение**, которое стоит знать, прежде чем планировать короткое демо:
 
-> **Presentation, defense, evaluation, and results are reachable only after the
-> board is fully exhausted.** The *only* edge out of the `GAME_BOARD` loop is the
-> **final shop** (fork B), which opens when the last of the 30 cells is blocked.
-> There is no "skip to the end". To reach `RESULTS`/`FINISHED`, **all 30 questions
-> must be answered.**
+> **Презентация, защита, оценивание и результаты достижимы только после того, как
+> поле полностью исчерпано.** *Единственное* ребро из цикла `GAME_BOARD` — это
+> **финальный магазин** (развилка B), который открывается, когда заблокирована
+> последняя из 30 ячеек. Никакого «перепрыгнуть в конец» нет. Чтобы достичь
+> `RESULTS`/`FINISHED`, **все 30 вопросов должны быть отвечены.**
 
-That is less work than it sounds — answers are not graded for correctness, so
-each battle cycle is just select → open → answer → host-accept, a few seconds
-each. Practical options, by time budget:
+Это меньше работы, чем кажется — ответы не оцениваются на правильность, поэтому
+каждый боевой цикл — это просто выбрать → открыть → ответить → ведущий-принимает,
+по несколько секунд каждый. Практичные варианты, по бюджету времени:
 
-- **Full manual run (≈10–15 min).** Two teams (the `MIN_TEAMS_TO_START`), one
-  captain each, play all 30 cells (accept every answer), buy once at a shop to
-  show commerce, upload one deck each, run the defense, evaluate, and calculate
-  results. This is the walkthrough above end to end.
-- **Representative segment (≈3–5 min).** Run Act 1, play the first **6 cells** to
-  trigger the **first shop** (Acts 2–3), then **explain** that the same loop
-  repeats four more times until the board is exhausted, at which point Acts 4–7
-  follow. Use this when you only need to show the lobby, the battle cycle, and the
-  shop fork live.
-- **Automated full run.** For a hands-off, end-to-end proof, run
-  `npm run test:e2e` — `test/acceptance/full-game.e2e-spec.ts` plays the entire
-  game through real REST transitions (it uses a fast shop timer purely so it
-  doesn't wait out the real 30-second/2-minute windows).
+- **Полный ручной прогон (≈10–15 мин).** Две команды (`MIN_TEAMS_TO_START`), по
+  одному капитану, играют все 30 ячеек (принимают каждый ответ), один раз
+  покупают в магазине, чтобы показать коммерцию, загружают по одной презентации,
+  проводят защиту, оценивают и считают результаты. Это разбор выше от начала до
+  конца.
+- **Репрезентативный отрезок (≈3–5 мин).** Проведите Акт 1, сыграйте первые
+  **6 ячеек**, чтобы вызвать **первый магазин** (Акты 2–3), затем **объясните**,
+  что тот же цикл повторяется ещё четыре раза, пока поле не исчерпано, после чего
+  следуют Акты 4–7. Используйте это, когда нужно показать вживую только лобби,
+  боевой цикл и развилку магазина.
+- **Автоматический полный прогон.** Для проверки end-to-end без рук запустите
+  `npm run test:e2e` — `test/acceptance/full-game.e2e-spec.ts` проигрывает всю
+  игру через реальные REST-переходы (он использует быстрый таймер магазина
+  исключительно чтобы не пережидать реальные 30-секундные/2-минутные окна).
 
-To keep a manual run brisk, remember the real timing: the shop's 30-second
-minimum-close applies at **every** shop window, and you can let captains answer
-immediately rather than waiting out the 60-second answer timer.
+Чтобы ручной прогон шёл бойко, помните про реальный тайминг: 30-секундный минимум
+на закрытие магазина применяется на **каждом** окне магазина, и вы можете
+позволить капитанам отвечать сразу, а не пережидать 60-секундный таймер ответа.
 
 ---
 
-## 6 · Demo troubleshooting
+## 6 · Устранение неполадок демо
 
-Most demo snags are environment, not logic. The full list is in the
-[README → Troubleshooting](../README.md#troubleshooting); the demo-relevant ones:
+Большинство затыков демо — окружение, а не логика. Полный список в
+[README → Устранение неполадок](../README.md#устранение-неполадок); относящиеся к демо:
 
-- **Health shows `storage: error` / uploads fail / the board looks empty.** The
-  catalog or the bucket is not provisioned. Run `npm run db:migrate` then
-  `npm run db:seed` (the seed provisions the MinIO bucket — see
-  [minio.md](minio.md)).
-- **State seems lost mid-game / timers vanished.** The backend was restarted —
-  presence and timers are in-memory and do not survive it. Start over and run the
-  game in one continuous process (see the caveats in [§1](#1--prerequisites-and-bring-up)).
-- **A call is rejected `401`/`403`.** You sent the wrong token, or none — host
-  actions need `X-Host-Token`, player actions need `X-Player-Token`, and a player
-  is checked for the right room/team. See
-  [frontend-guide → §2.6](frontend-guide.md#26--401-vs-403--who-gets-what).
-- **The shop won't close.** You are inside the 30-second minimum-close window
-  (`SHOP_MIN_SECONDS`). Wait, then retry.
-- **A port is already in use (`3000`, `5432`, `9000`, `9001`).** Another process
-  or an old stack is bound — stop it, or change the port in
-  [`.env`](../.env.example). See [README → Troubleshooting](../README.md#troubleshooting).
-- **For run modes, config, and cleanup**, defer to
+- **Health показывает `storage: error` / загрузки падают / поле выглядит
+  пустым.** Каталог или бакет не подготовлены. Запустите `npm run db:migrate`,
+  затем `npm run db:seed` (сид создаёт бакет MinIO — см. [minio.md](minio.md)).
+- **Состояние будто потеряно посреди игры / таймеры исчезли.** Backend был
+  перезапущен — присутствие и таймеры в памяти и не переживают этого. Начните
+  заново и проводите игру в одном непрерывном процессе (см. оговорки в
+  [§1](#1--предварительные-требования-и-запуск)).
+- **Вызов отклонён с `401`/`403`.** Вы отправили не тот токен или ни одного —
+  действиям ведущего нужен `X-Host-Token`, действиям игрока — `X-Player-Token`, и
+  игрок проверяется на правильную комнату/команду. См.
+  [frontend-guide → §2.6](frontend-guide.md#26--401-против-403--кто-что-получает).
+- **Магазин не закрывается.** Вы внутри 30-секундного окна минимума на закрытие
+  (`SHOP_MIN_SECONDS`). Подождите, затем повторите.
+- **Порт уже занят (`3000`, `5432`, `9000`, `9001`).** Другой процесс или старый
+  стек занял его — остановите его или смените порт в
+  [`.env`](../.env.example). См. [README → Устранение неполадок](../README.md#устранение-неполадок).
+- **По режимам запуска, конфигурации и очистке** обращайтесь к
   [local-development.md](local-development.md).
 
 ---
 
-## 7 · Where to go next
+## 7 · Куда двигаться дальше
 
-This guide is the demo orchestration; the references it leans on:
+Этот гайд — оркестрация демо; источники, на которые он опирается:
 
-- **[README](../README.md)** — setup, the npm scripts, verifying the stack, and
-  the project's limitations.
-- **[local-development.md](local-development.md)** — the two run modes, the
-  Compose topology, environment variables, and cleanup.
-- **[frontend-guide.md](frontend-guide.md)** — the consumer's view of this exact
-  flow: authentication (§2), the stage machine and its three forks (§3), the
-  end-to-end REST→WS scenarios (§4), the WebSocket connection model (§5), and the
-  file-privacy rules (§6).
-- **[realtime-events.md](realtime-events.md)** — the authoritative WebSocket
-  event catalog (names, directions, audiences, payloads).
-- **Swagger UI (`/docs`)** — the authoritative REST reference; the demonstrator's
-  primary driver.
+- **[README](../README.md)** — настройка, npm-скрипты, проверка стека и
+  ограничения проекта.
+- **[local-development.md](local-development.md)** — два режима запуска,
+  топология Compose, переменные окружения и очистка.
+- **[frontend-guide.md](frontend-guide.md)** — взгляд потребителя на ровно этот
+  поток: авторизация (§2), машина стадий и её три развилки (§3), сквозные
+  сценарии REST→WS (§4), модель WebSocket-подключения (§5) и правила приватности
+  файлов (§6).
+- **[realtime-events.md](realtime-events.md)** — авторитетный каталог
+  WebSocket-событий (имена, направления, аудитории, payload'ы).
+- **Swagger UI (`/docs`)** — авторитетный REST-справочник; основной драйвер
+  демонстратора.
 - **[`test/acceptance/full-game.e2e-spec.ts`](../test/acceptance/full-game.e2e-spec.ts)**
-  — the same game as an automated run, for a programmatic full-path proof.
+  — та же игра как автоматический прогон, для программного доказательства всего
+  пути.

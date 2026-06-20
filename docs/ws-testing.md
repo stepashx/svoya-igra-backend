@@ -1,293 +1,305 @@
-# Manual WebSocket Test Checklist
+# Ручной чеклист тестирования WebSocket
 
-A reproducible, by-hand pass over the realtime (WebSocket) surface for a
-**demonstrator or QA engineer**. The plan's §22 testing section says the
-WebSocket layer "для MVP можно начать с ручных сценариев" (for the MVP, start
-with manual scenarios) and lists the scenarios to walk; this file turns that
-list into an executable checklist — for each scenario, **the REST action that
-triggers it, the real event that should arrive, who should receive it, and how
-to confirm it**.
+Воспроизводимый ручной прогон по realtime-поверхности (WebSocket) для
+**демонстратора или QA-инженера**. Раздел тестирования §22 плана говорит, что
+для WebSocket-слоя «для MVP можно начать с ручных сценариев», и перечисляет
+сценарии для прохода; этот файл превращает тот список в исполняемый чеклист —
+для каждого сценария: **REST-действие, которое его запускает, реальное событие,
+которое должно прийти, кто должен его получить и как это подтвердить**.
 
-This complements — does not replace — the automated realtime coverage
-(`test/**` socket-delivery and host-delivery e2e specs). Automation proves the
-events fire; this checklist lets a human watch them fire during a demo or a
-pre-demo smoke test, and — crucially — confirm **audience** (who does *and does
-not* receive each event), which is the part most easily broken and least obvious
-from a single socket.
+Это дополняет — но не заменяет — автоматическое покрытие realtime
+(socket-delivery и host-delivery e2e-спеки в `test/**`). Автоматизация
+доказывает, что события эмитируются; этот чеклист позволяет человеку наблюдать,
+как они эмитируются, во время демо или предемонстрационного smoke-теста и —
+что критично — подтвердить **аудиторию** (кто получает *и кто не получает*
+каждое событие), а это та часть, которую легче всего сломать и которую труднее
+всего заметить с одного сокета.
 
-## Sources of truth (do not duplicate them here)
+## Источники истины (не дублируй их здесь)
 
-- **[realtime-events.md](realtime-events.md)** — the authoritative catalog of
-  every event's canonical name, area, audience and **payload** (§16.1–§16.8).
-  This checklist references events by their short name; the payload shapes live
-  there.
-- **[frontend-guide.md → §5](frontend-guide.md#5--websocket)** — how to connect a
-  socket, the four audiences, and the two transport commands. §2.5 (anonymous
-  socket) and §2.8 (`INVALID_RECONNECT_TOKEN`) cover the handshake edge cases.
-- **[demo.md → §4](demo.md#4--the-demo-game-step-by-step)** — the same game
-  narrated end-to-end with the exact REST calls and tokens; follow it to *drive*
-  a full game while this file tells you *what to verify* at each step.
+- **[realtime-events.md](realtime-events.md)** — авторитетный каталог
+  каноничного имени, area, аудитории и **payload** каждого события (§16.1–§16.8).
+  Этот чеклист ссылается на события по короткому имени; формы payload живут
+  там.
+- **[frontend-guide.md → §5](frontend-guide.md#5--websocket)** — как подключить
+  сокет, четыре аудитории и две транспортные команды. §2.5 (анонимный сокет) и
+  §2.8 (`INVALID_RECONNECT_TOKEN`) разбирают граничные случаи рукопожатия.
+- **[demo.md → §4](demo.md#4--демо-игра-шаг-за-шагом)** — та же игра,
+  рассказанная от начала до конца с точными REST-вызовами и токенами; следуй ей,
+  чтобы *вести* полную игру, пока этот файл говорит, *что проверять* на каждом
+  шаге.
 
-Every event name below is the friendly short form. Its fully-qualified wire form
-is `server:<area>:<name>` — e.g. `player-joined` → `server:game-session:player-joined`,
-`defense:started` → `server:defense:started`. The catalog lists both.
+Каждое имя события ниже — дружественная короткая форма. Его полная проводная
+форма — `server:<area>:<name>`, например `player-joined` → `server:game-session:player-joined`,
+`defense:started` → `server:defense:started`. Каталог перечисляет обе.
 
 ---
 
-## Setup
+## Подготовка
 
-### 1 · A WebSocket client to observe events
+### 1 · WebSocket-клиент для наблюдения событий
 
-Any Socket.IO 4.x client works. Common choices:
+Подойдёт любой клиент Socket.IO 4.x. Частые варианты:
 
-- **Browser console** (most demo-friendly) — load `socket.io-client` and connect,
-  then `socket.onAny((e, p) => console.log(e, p))` to log everything.
-- **Postman** — has a native Socket.IO request type (set the event list to
-  listen on, or listen to all).
-- **A tiny Node script** with `socket.io-client` and `socket.onAny(...)`.
+- **Консоль браузера** (самый удобный для демо) — загрузи `socket.io-client` и
+  подключись, затем `socket.onAny((e, p) => console.log(e, p))`, чтобы логировать
+  всё.
+- **Postman** — имеет нативный тип запроса Socket.IO (задай список событий для
+  прослушивания или слушай все).
+- **Крошечный Node-скрипт** с `socket.io-client` и `socket.onAny(...)`.
 
-The connection recipe is fixed by
-[frontend-guide → §5.1](frontend-guide.md#51--connecting):
+Рецепт подключения зафиксирован в
+[frontend-guide → §5.1](frontend-guide.md#51--подключение):
 
 ```js
 import { io } from 'socket.io-client';
 
-const socket = io(BACKEND_URL, {        // e.g. http://localhost:3000
-  path: '/socket.io',                   // must match WS_PATH
+const socket = io(BACKEND_URL, {        // например http://localhost:3000
+  path: '/socket.io',                   // должно совпадать с WS_PATH
   transports: ['websocket'],
-  auth: { reconnectToken },             // host OR player token; omit for anonymous
+  auth: { reconnectToken },             // токен ведущего ИЛИ игрока; опусти для анонима
 });
 socket.onAny((event, payload) => console.log(event, payload));
 ```
 
-> **Note:** `socket.io-client` is **not** plain `wscat`. The handshake is the
-> Socket.IO protocol, not a raw WebSocket, so a bare `wscat ws://…` will not
-> speak it — use a Socket.IO-aware client (browser/Postman/Node).
+> **Примечание:** `socket.io-client` — это **не** обычный `wscat`. Рукопожатие
+> идёт по протоколу Socket.IO, а не по сырому WebSocket, поэтому голый
+> `wscat ws://…` не заговорит на нём — используй клиент, понимающий Socket.IO
+> (браузер/Postman/Node).
 
-### 2 · Open three observer sockets — audience is the point
+### 2 · Открой три сокета-наблюдателя — суть в аудитории
 
-Audience is the property this checklist exists to verify, so open **three**
-sockets at once and keep them side by side:
+Аудитория — то свойство, ради проверки которого существует этот чеклист,
+поэтому открой **три** сокета сразу и держи их рядом:
 
-| Observer | Connect with | Sees |
+| Наблюдатель | Подключение | Видит |
 |---|---|---|
-| **HOST** | the host token (`auth.reconnectToken = hostReconnectToken`) | room-wide **and** host-only events |
-| **TEAM** (a player) | that player's `reconnectToken` | room-wide **and** that team's team-only events |
-| **ANON** (spectator) | no token, then send `client:realtime:join-room` with the room id | room-wide events **only** ([frontend-guide → §2.5](frontend-guide.md#25--the-anonymous-socket-spectator)) |
+| **HOST** | токен ведущего (`auth.reconnectToken = hostReconnectToken`) | события всем в комнате **и** только ведущему |
+| **TEAM** (игрок) | `reconnectToken` этого игрока | события всем в комнате **и** только команде этого игрока |
+| **ANON** (зритель) | без токена, затем отправь `client:realtime:join-room` с id комнаты | **только** события всем в комнате ([frontend-guide → §2.5](frontend-guide.md#25--анонимный-сокет-зритель)) |
 
-A test **passes** only when an event reaches exactly its documented audience —
-e.g. `cell-selection-requested` must appear on HOST and **not** on TEAM/ANON;
-`inventory-updated` must appear on the buying TEAM and **not** on a different
-team or ANON.
+Тест **проходит**, только когда событие достигает ровно своей задокументированной
+аудитории — например `cell-selection-requested` должно появиться на HOST и **не**
+на TEAM/ANON; `inventory-updated` должно появиться на покупающей TEAM и **не** на
+другой команде или ANON.
 
-### 3 · Drive the game over REST
+### 3 · Веди игру через REST
 
-Every game mutation is a **REST** call — WebSocket is observe-only here (the only
-two client→server messages are `join-room`/`leave-room`, pure transport grouping;
-see [frontend-guide → §5.3](frontend-guide.md#53--clientserver-commands)). Drive
-the REST side with **Swagger (`/docs`)**, `curl`, or Postman, exactly as in
-[demo.md → §3](demo.md#3--how-to-drive-the-backend-without-a-frontend). Save the
-host token and each player token the instant they are issued — they are returned
-once and never re-issued.
+Каждая мутация игры — это **REST**-вызов, WebSocket здесь только для наблюдения
+(единственные два сообщения client→server — `join-room`/`leave-room`, чистая
+транспортная группировка; см.
+[frontend-guide → §5.3](frontend-guide.md#53--команды-clientserver)). Веди
+REST-сторону через **Swagger (`/docs`)**, `curl` или Postman, ровно как в
+[demo.md → §3](demo.md#3--как-управлять-backend-без-фронтенда). Сохрани
+токен ведущего и каждый токен игрока в момент их выдачи — они возвращаются
+один раз и больше не выдаются.
 
-### 4 · Cross-check with the REST mirror
+### 4 · Сверяйся с REST-зеркалом
 
-Most events have a REST read that reports the same state, so you can confirm an
-effect even if you missed the live event: `GET /api/rooms/:code/game/state`,
-`/board`, `/status`, `/game/stage`, `/shop/items`, `/presentation/files`,
-`/evaluation/progress`, `/evaluation/results`, `/defense/state`. Timestamps in
-payloads (`endsAt`, `uploadedAt`, …) are **ISO-8601 strings** over the wire, not
-numbers.
+У большинства событий есть REST-чтение, сообщающее то же состояние, поэтому
+эффект можно подтвердить, даже если ты пропустил событие вживую:
+`GET /api/rooms/:code/game/state`, `/board`, `/status`, `/game/stage`,
+`/shop/items`, `/presentation/files`, `/evaluation/progress`,
+`/evaluation/results`, `/defense/state`. Метки времени в payload (`endsAt`,
+`uploadedAt`, …) идут по проводу как **строки ISO-8601**, не числа.
 
 ---
 
-## A · Connection & reconnect (§16.1)
+## A · Подключение и переподключение (§16.1)
 
-The handshake foundation — verify this first; the canon scenario list (§B
-onward) assumes a connected socket. None of these need a game in progress beyond
-an existing room/player.
+Фундамент рукопожатия — проверь это первым; список каноничных сценариев (§B и
+далее) предполагает подключённый сокет. Ни один из этих пунктов не требует
+идущей игры сверх существующих комнаты/игрока.
 
-| # | Do this | Expect (event) | Audience | How to verify |
+| # | Сделай это | Ожидай (событие) | Аудитория | Как проверить |
 |---|---|---|---|---|
-| A1 | Connect a socket with a **valid** token (host or player) | `connection-restored`, then `room-state` | originating socket | The connecting socket logs **both**, in that order; `room-state` carries the `{ room, players[], teams[] }` snapshot. This is the "join complete" signal. |
-| A2 | Connect with **no** token (anonymous), then send `client:realtime:join-room` with the room id | (no identity events) then room-wide events | originating / room | Before `join-room`: silence. After: the socket starts seeing **room-wide** events only — never host-only or team-only. |
-| A3 | Connect with a **non-empty but invalid** token | `error` (code `INVALID_RECONNECT_TOKEN`), then forced disconnect | originating socket | The socket receives a single `server:game-session:error` and is then disconnected by the server ([§2.8](frontend-guide.md#28--invalid_reconnect_token)). |
-| A4 | Drop a player's **last** socket (close the tab/connection) | `connection-lost` | room | The HOST and other room sockets see `connection-lost` `{ roomId, playerId }`. (Multi-tab: fires only when that identity's last socket leaves.) |
-| A5 | Reconnect that player (new socket, same token) | `client-reconnected` (room) + `connection-restored`/`room-state` (originating) | room + originating | Room sockets see `client-reconnected`; the reconnecting socket also gets its restored snapshot (as A1). |
-| A6 | Reconnect the **host** (`POST /api/rooms/:code/host/reconnect` and/or a fresh host socket) | `host-reconnected` | room | Room sockets see `host-reconnected` `{ roomId, hostId }`. A host *drop* is cleanup-only — there is deliberately **no** host-disconnect event. |
+| A1 | Подключи сокет с **валидным** токеном (ведущий или игрок) | `connection-restored`, затем `room-state` | только отправителю | Подключающийся сокет логирует **оба**, в этом порядке; `room-state` несёт снимок `{ room, players[], teams[] }`. Это сигнал «подключение завершено». |
+| A2 | Подключи **без** токена (анонимно), затем отправь `client:realtime:join-room` с id комнаты | (нет событий идентичности) затем события всем в комнате | только отправителю / комната | До `join-room`: тишина. После: сокет начинает видеть только события **всем в комнате** — никогда только ведущему или только команде. |
+| A3 | Подключи с **непустым, но невалидным** токеном | `error` (код `INVALID_RECONNECT_TOKEN`), затем принудительное отключение | только отправителю | Сокет получает единственный `server:game-session:error` и затем отключается сервером ([§2.8](frontend-guide.md#28--invalid_reconnect_token)). |
+| A4 | Урони **последний** сокет игрока (закрой вкладку/соединение) | `connection-lost` | комната | HOST и другие сокеты комнаты видят `connection-lost` `{ roomId, playerId }`. (Несколько вкладок: срабатывает, только когда уходит последний сокет этой идентичности.) |
+| A5 | Переподключи этого игрока (новый сокет, тот же токен) | `client-reconnected` (комната) + `connection-restored`/`room-state` (только отправителю) | комната + только отправителю | Сокеты комнаты видят `client-reconnected`; переподключающийся сокет также получает свой восстановленный снимок (как A1). |
+| A6 | Переподключи **ведущего** (`POST /api/rooms/:code/host/reconnect` и/или свежий сокет ведущего) | `host-reconnected` | комната | Сокеты комнаты видят `host-reconnected` `{ roomId, hostId }`. *Падение* ведущего — это только очистка; намеренно **нет** события host-disconnect. |
 
 ---
 
-## B · Lobby & game start (§16.2 / §16.3) — canon §22 scenarios 1–7
+## B · Лобби и старт игры (§16.2 / §16.3) — сценарии канона §22 1–7
 
-The room walks `LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD`. All events here
-are **room-wide**.
+Комната проходит `LOBBY → TEAM_SETUP → READY_CHECK → GAME_BOARD`. Все события
+здесь — **всем в комнате**.
 
-| # | Canon §22 scenario | Do this (REST) | Expect (event) | Audience | How to verify |
+| # | Сценарий канона §22 | Сделай это (REST) | Ожидай (событие) | Аудитория | Как проверить |
 |---|---|---|---|---|---|
-| 1 | ведущий создал комнату (host created room) | `POST /api/rooms` *(no auth)* | *(no broadcast — creation is REST)*; the first WS signal is `room-state` on the host socket | originating (host) | **There is no `room-created` event** — no sockets exist yet at creation. Connect the host socket (A1) and confirm the `room-state` snapshot shows the new room (`LOBBY`). |
-| 2 | игроки подключились (players joined) | `POST /api/rooms/:code/players` *(no auth)*, once per player | `player-joined` | room | Each join fires one `player-joined` `{ roomId, player }`; all three observers see it. |
-| 3 | команда создана (team created) | `POST /api/rooms/:code/teams` *(`X-Player-Token`)* | `team-created`; the **first** team also `game-stage-changed` → `TEAM_SETUP` | room | Watch `team-created` `{ roomId, team, captain }`. On the very first team, also a `game-stage-changed` with `stage: TEAM_SETUP`. |
-| 4 | капитан назначен (captain assigned) | *(same call as #3; or `POST .../teams/:teamId/members` to add players)* | **No dedicated event.** The captain is the `captain` field of `team-created` (the creating player); a later captain change rides `team-updated` | room | **Do not wait for a `captain-assigned` event — none exists.** Confirm via `team-created.captain` (= the team creator, `isCaptain: true`) and via `team-updated.team.captainPlayerId` on any change. |
-| 5 | тема выбрана (topic selected) | `PATCH /api/rooms/:code/teams/:teamId/topic` *(`X-Player-Token`, the captain)* | `team-topic-selected` | room | Watch `team-topic-selected` `{ roomId, team }` with the chosen `selectedTopicId`. |
-| 6 | команды готовы (teams ready) | `PATCH /api/rooms/:code/teams/:teamId/ready` *(`X-Player-Token`)* with `isReady:true` | `team-ready-changed`; on crossing `MIN_TEAMS_TO_START`, also `game-can-start-changed` and `game-stage-changed` → `READY_CHECK` | room | Each toggle → `team-ready-changed`. When enough teams are ready, `game-can-start-changed` `{ canStart, readyCount }` (room-wide today — see note) and a `READY_CHECK` stage change. |
-| 7 | игра стартовала (game started) | `POST /api/rooms/:code/game/start` *(`X-Host-Token`)* | a burst: `game-started`, `game-first-team-selected`, `game-stage-changed` → `GAME_BOARD`, `game-turn-changed`, `game-state-updated` | room | All five arrive; `game-stage-changed.stage` is `GAME_BOARD`, `game-turn-changed.currentTeamId` names the first team. Cross-check `GET /game/stage` = `GAME_BOARD`. |
+| 1 | ведущий создал комнату | `POST /api/rooms` *(без auth)* | *(нет рассылки — создание это REST)*; первый WS-сигнал — `room-state` на сокете ведущего | только отправителю (ведущий) | **События `room-created` нет** — в момент создания сокетов ещё нет. Подключи сокет ведущего (A1) и подтверди, что снимок `room-state` показывает новую комнату (`LOBBY`). |
+| 2 | игроки подключились | `POST /api/rooms/:code/players` *(без auth)*, по разу на игрока | `player-joined` | комната | Каждое подключение эмитирует один `player-joined` `{ roomId, player }`; все три наблюдателя его видят. |
+| 3 | команда создана | `POST /api/rooms/:code/teams` *(`X-Player-Token`)* | `team-created`; на **первой** команде также `game-stage-changed` → `TEAM_SETUP` | комната | Следи за `team-created` `{ roomId, team, captain }`. На самой первой команде также `game-stage-changed` со `stage: TEAM_SETUP`. |
+| 4 | капитан назначен | *(тот же вызов, что и #3; или `POST .../teams/:teamId/members`, чтобы добавить игроков)* | **Выделенного события нет.** Капитан — это поле `captain` события `team-created` (создающий игрок); более поздняя смена капитана едет на `team-updated` | комната | **Не жди событие `captain-assigned` — его нет.** Подтверждай через `team-created.captain` (= создатель команды, `isCaptain: true`) и через `team-updated.team.captainPlayerId` при любой смене. |
+| 5 | тема выбрана | `PATCH /api/rooms/:code/teams/:teamId/topic` *(`X-Player-Token`, капитан)* | `team-topic-selected` | комната | Следи за `team-topic-selected` `{ roomId, team }` с выбранным `selectedTopicId`. |
+| 6 | команды готовы | `PATCH /api/rooms/:code/teams/:teamId/ready` *(`X-Player-Token`)* с `isReady:true` | `team-ready-changed`; при переходе через `MIN_TEAMS_TO_START` также `game-can-start-changed` и `game-stage-changed` → `READY_CHECK` | комната | Каждое переключение → `team-ready-changed`. Когда готово достаточно команд — `game-can-start-changed` `{ canStart, readyCount }` (сегодня всем в комнате — см. примечание) и смена стадии на `READY_CHECK`. |
+| 7 | игра стартовала | `POST /api/rooms/:code/game/start` *(`X-Host-Token`)* | залп: `game-started`, `game-first-team-selected`, `game-stage-changed` → `GAME_BOARD`, `game-turn-changed`, `game-state-updated` | комната | Приходят все пять; `game-stage-changed.stage` равно `GAME_BOARD`, `game-turn-changed.currentTeamId` называет первую команду. Сверь `GET /game/stage` = `GAME_BOARD`. |
 
-> **`game-can-start-changed` is room-wide.** The catalog target is the host, but
-> it is currently broadcast to the whole room; non-host clients may ignore it.
+> **`game-can-start-changed` идёт всем в комнате.** По каталогу адресат — ведущий,
+> но сейчас оно рассылается всей комнате; не-ведущие клиенты могут его
+> игнорировать.
 
 ---
 
-## C · Gameplay / battle (§16.4) — canon §22 scenarios 8–13
+## C · Геймплей / битва (§16.4) — сценарии канона §22 8–13
 
-One cell = one cycle, repeated until the board is exhausted. **Note the two
-host-only events** — this section is where audience verification matters most.
+Одна ячейка = один цикл, повторяется, пока поле не исчерпано. **Обрати внимание
+на два события только ведущему** — именно здесь проверка аудитории важнее всего.
 
-| # | Canon §22 scenario | Do this (REST) | Expect (event) | Audience | How to verify |
+| # | Сценарий канона §22 | Сделай это (REST) | Ожидай (событие) | Аудитория | Как проверить |
 |---|---|---|---|---|---|
-| 8 | вопрос выбран (cell/question selected) | `POST /api/rooms/:code/board/select` *(`X-Player-Token`, the active captain)* | `cell-selection-requested` | **host-only** | **Must appear on HOST only.** Confirm the TEAM and ANON sockets do **not** receive it. *(The room-wide `cell-selected` is reserved/superseded — never sent.)* |
-| 9 | ведущий подтвердил (host confirmed) | `POST /api/rooms/:code/questions/open` *(`X-Host-Token`)* | `cell-selection-approved`, `question-opened`, `question-timer-started` | room | All three room-wide. `question-opened` carries the question text **without** `correctAnswer`. Reject path instead: `POST .../questions/reject` → `cell-selection-rejected` (room). Optional host reveal: `POST .../questions/review` with `revealAnswer:true` → `question-correct-answer-shown-to-host` (**host-only**). |
-| 10 | ответ принят (answer accepted) | `POST /api/rooms/:code/questions/answer` *(captain)*, then `POST /api/rooms/:code/questions/review` *(`X-Host-Token`)* with `accepted:true` | `answer-submitted` (on answer), then `answer-accepted` (on review) | room | `answer-submitted` **carries the answer text room-wide** (a live echo, not persisted) — all observers see the text. Then `answer-accepted`. Reject path: `accepted:false` → `answer-rejected` (same shape). |
-| 11 | очки обновились (score updated) | *(part of the accept review in #10)* | `score-changed` | room | On accept, `score-changed` `{ teamId, earnedScore, balance, delta }` with a **positive** `delta` (the cell's points). Cross-check team score in `GET /game/state`. |
-| 12 | ячейка заблокировалась (cell blocked) | *(part of the review in #10, both accept and reject)* | `cell-blocked`, then `board-state-updated` | room | `cell-blocked` `{ cellId, state: BLOCKED, answeredByTeamId }` fires on **both** outcomes (`answeredByTeamId` null on reject); a `board-state-updated` snapshot follows. |
-| 13 | ход перешёл (turn passed) | *(part of the review in #10, both outcomes)* | `game-turn-changed` | room | `game-turn-changed.currentTeamId` flips to the other team after **every** review, accepted or rejected. |
+| 8 | вопрос выбран | `POST /api/rooms/:code/board/select` *(`X-Player-Token`, активный капитан)* | `cell-selection-requested` | **только ведущему** | **Должно появиться только на HOST.** Подтверди, что сокеты TEAM и ANON его **не** получают. *(Событие `cell-selected` всем в комнате зарезервировано/вытеснено — никогда не отправляется.)* |
+| 9 | ведущий подтвердил | `POST /api/rooms/:code/questions/open` *(`X-Host-Token`)* | `cell-selection-approved`, `question-opened`, `question-timer-started` | комната | Все три — всем в комнате. `question-opened` несёт текст вопроса **без** `correctAnswer`. Путь отклонения вместо этого: `POST .../questions/reject` → `cell-selection-rejected` (комната). Опциональный показ ведущему: `POST .../questions/review` с `revealAnswer:true` → `question-correct-answer-shown-to-host` (**только ведущему**). |
+| 10 | ответ принят | `POST /api/rooms/:code/questions/answer` *(капитан)*, затем `POST /api/rooms/:code/questions/review` *(`X-Host-Token`)* с `accepted:true` | `answer-submitted` (на ответ), затем `answer-accepted` (на проверку) | комната | `answer-submitted` **несёт текст ответа всем в комнате** (живое эхо, не персистится) — все наблюдатели видят текст. Затем `answer-accepted`. Путь отклонения: `accepted:false` → `answer-rejected` (та же форма). |
+| 11 | очки обновились | *(часть проверки-приёма в #10)* | `score-changed` | комната | На приёме `score-changed` `{ teamId, earnedScore, balance, delta }` с **положительным** `delta` (очки ячейки). Сверь счёт команды в `GET /game/state`. |
+| 12 | ячейка заблокировалась | *(часть проверки в #10, и приём, и отклонение)* | `cell-blocked`, затем `board-state-updated` | комната | `cell-blocked` `{ cellId, state: BLOCKED, answeredByTeamId }` срабатывает на **обоих** исходах (`answeredByTeamId` равен null при отклонении); следом снимок `board-state-updated`. |
+| 13 | ход перешёл | *(часть проверки в #10, оба исхода)* | `game-turn-changed` | комната | `game-turn-changed.currentTeamId` переключается на другую команду после **каждой** проверки, принятой или отклонённой. |
 
-> **Timeout instead of an answer:** `POST /api/rooms/:code/game/advance`
-> *(`X-Host-Token`)* fires `question-timer-ended` (room) and moves to
-> `ANSWER_REVIEW`. The 60s answer timer is informational — no server scheduler;
-> the timer surfaces only via this lazy bridge, never a pushed countdown.
+> **Таймаут вместо ответа:** `POST /api/rooms/:code/game/advance`
+> *(`X-Host-Token`)* эмитирует `question-timer-ended` (комната) и переводит в
+> `ANSWER_REVIEW`. 60-секундный таймер ответа — информационный, серверного
+> планировщика нет; таймер проявляется только через этот ленивый мост, никогда
+> не как пушнутый обратный отсчёт.
 
 ---
 
-## D · Commerce / shop (§16.5) — canon §22 scenarios 14–16
+## D · Коммерция / магазин (§16.5) — сценарии канона §22 14–16
 
-The shop opens after every 6th blocked cell (6th/12th/18th/24th) and a **final**
-shop after the 30th. **`inventory-updated` is team-only** — the QR is secret.
+Магазин открывается после каждой 6-й заблокированной ячейки (6-й/12-й/18-й/24-й)
+и **финальный** магазин после 30-й. **`inventory-updated` идёт только команде** —
+QR секретен.
 
-| # | Canon §22 scenario | Do this (REST) | Expect (event) | Audience | How to verify |
+| # | Сценарий канона §22 | Сделай это (REST) | Ожидай (событие) | Аудитория | Как проверить |
 |---|---|---|---|---|---|
-| 14 | магазин открылся (shop opened) | *(automatic after the 6th-cadence review; final shop after the 30th)* | `shop-opened` (or `shop-final-opened` on the exhausted board) | room | Arrives **last** in the review block; carries `{ currentShopRound, startedAt, endsAt, minClosableAt }`. Cross-check `GET /shop/round`. Host closes later with `POST /shop/close` → `shop-closed` `{ nextStage }`. |
-| 15 | товар куплен (item purchased) | `POST /api/rooms/:code/shop/purchase` *(`X-Player-Token`, a captain buying for their own team)* | `score-changed` (negative delta), `shop-item-purchased`, `shop-item-unavailable`, `shop-state-updated` | room | All room-wide and **carry no QR content**. `score-changed` here has a **negative** `delta` (only `balance` moves; `earnedScore` holds). |
-| 16 | инвентарь обновился (inventory updated) | *(same purchase as #15)* | `inventory-updated` | **team-only** | **Must appear on the buying TEAM only**, after commit, carrying the QR `publicUrl`. Confirm a *different* team's socket and ANON do **not** receive it. *(`shop-purchase-rejected` is reserved — a rejected buy is the REST **409**, not an event.)* |
+| 14 | магазин открылся | *(автоматически после проверки на 6-й кратности; финальный магазин после 30-й)* | `shop-opened` (или `shop-final-opened` на исчерпанном поле) | комната | Приходит **последним** в блоке проверки; несёт `{ currentShopRound, startedAt, endsAt, minClosableAt }`. Сверь `GET /shop/round`. Ведущий закрывает позже через `POST /shop/close` → `shop-closed` `{ nextStage }`. |
+| 15 | товар куплен | `POST /api/rooms/:code/shop/purchase` *(`X-Player-Token`, капитан, покупающий для своей команды)* | `score-changed` (отрицательный delta), `shop-item-purchased`, `shop-item-unavailable`, `shop-state-updated` | комната | Все — всем в комнате и **не несут содержимого QR**. `score-changed` здесь имеет **отрицательный** `delta` (двигается только `balance`; `earnedScore` держится). |
+| 16 | инвентарь обновился | *(та же покупка, что и #15)* | `inventory-updated` | **только команде** | **Должно появиться только на покупающей TEAM**, после коммита, неся `publicUrl` для QR. Подтверди, что сокет *другой* команды и ANON его **не** получают. *(`shop-purchase-rejected` зарезервировано — отклонённая покупка это REST **409**, не событие.)* |
 
 ---
 
-## E · Presentation (§16.6) — canon §22 scenarios 17–19
+## E · Презентация (§16.6) — сценарии канона §22 17–19
 
-Presentation files are **public by design** (the opposite of the QR secret), so
-every event here is room-wide and may carry `publicUrl`.
+Файлы презентаций **публичны по замыслу** (противоположность секрету QR),
+поэтому каждое событие здесь идёт всем в комнате и может нести `publicUrl`.
 
-| # | Canon §22 scenario | Do this (REST) | Expect (event) | Audience | How to verify |
+| # | Сценарий канона §22 | Сделай это (REST) | Ожидай (событие) | Аудитория | Как проверить |
 |---|---|---|---|---|---|
-| — | *(host opens preparation)* | `POST /api/rooms/:code/presentation/start-preparation` *(`X-Host-Token`)* | `preparation-started`, then `timer-started` | room | Both room-wide; the deadline is at `GET /presentation/deadline`. A repeat start replaces the timer and re-emits both. |
-| 17 | презентация загружена (presentation uploaded) | `POST /api/rooms/:code/presentation/upload` *(`X-Player-Token`, multipart field `file`)* | `submission-uploaded` (first), then `files-updated` (last) | room | After commit. `submission-uploaded` carries the submission incl. `publicUrl` and the **server-canonical** `mimeType`. A replace (`PUT .../upload`) emits `submission-replaced` instead. |
-| 18 | файл появился у всех (file visible to everyone) | *(same upload as #17)* | `files-updated` | room | The whole-room catalog `{ files: [{ teamId, originalFileName, publicUrl, … }] }` — the same projection as `GET /presentation/files`. Confirm **every** observer (incl. ANON) receives it: the file is public. *(For "file survives a backend restart", see the MinIO durability check in [minio.md](minio.md) — that is §22's MinIO section, not a WS event.)* |
-| 19 | просрочка дала штраф (late upload penalized) | upload **after** the prep deadline | `submission-late` | room | Fires **only** when the upload is late, between `submission-uploaded` and `files-updated`; carries `{ submissionId, latePenalty }` (effective `LATE_PENALTY`, default **1**). Verify it does **not** fire on an on-time upload. |
+| — | *(ведущий открывает подготовку)* | `POST /api/rooms/:code/presentation/start-preparation` *(`X-Host-Token`)* | `preparation-started`, затем `timer-started` | комната | Оба — всем в комнате; дедлайн — по `GET /presentation/deadline`. Повторный старт заменяет таймер и переэмитирует оба. |
+| 17 | презентация загружена | `POST /api/rooms/:code/presentation/upload` *(`X-Player-Token`, multipart-поле `file`)* | `submission-uploaded` (первым), затем `files-updated` (последним) | комната | После коммита. `submission-uploaded` несёт submission, включая `publicUrl` и **серверно-каноничный** `mimeType`. Замена (`PUT .../upload`) эмитирует вместо этого `submission-replaced`. |
+| 18 | файл появился у всех | *(та же загрузка, что и #17)* | `files-updated` | комната | Каталог на всю комнату `{ files: [{ teamId, originalFileName, publicUrl, … }] }` — та же проекция, что и `GET /presentation/files`. Подтверди, что **каждый** наблюдатель (включая ANON) его получает: файл публичен. *(Для «файл переживает перезапуск backend» см. проверку долговечности MinIO в [minio.md](minio.md) — это раздел MinIO из §22, не WS-событие.)* |
+| 19 | просрочка дала штраф | загрузка **после** дедлайна подготовки | `submission-late` | комната | Срабатывает **только**, когда загрузка просрочена, между `submission-uploaded` и `files-updated`; несёт `{ submissionId, latePenalty }` (эффективный `LATE_PENALTY`, по умолчанию **1**). Проверь, что оно **не** срабатывает на своевременной загрузке. |
 
-> Reserved here (never arrive): `requirements-updated` (the catalog is static —
-> read `GET /presentation/requirements`), `timer-ended` (the deadline surfaces
-> via `GET /presentation/deadline`), `submission-status-changed`.
+> Зарезервировано здесь (никогда не приходят): `requirements-updated` (каталог
+> статичен — читай `GET /presentation/requirements`), `timer-ended` (дедлайн
+> проявляется через `GET /presentation/deadline`), `submission-status-changed`.
 
 ---
 
-## F · Defense (§16.7) — beyond the canon §22 WS list
+## F · Защита (§16.7) — за пределами WS-списка канона §22
 
-The §22 list jumps from the upload straight to evaluations, so the defense phase
-has **no canon §22 scenario** — but the events are live (Stage 10.1) and a full
-demo passes through them, so verify them too. All five are **room-wide and
-public**; the host paces the queue (no timer). The queue is **finite — it does
-not wrap**.
+Список §22 перепрыгивает от загрузки прямо к оцениванию, поэтому у фазы защиты
+**нет каноничного сценария §22** — но события живы (Этап 10.1), и полное демо
+проходит через них, так что проверь и их тоже. Все пять идут **всем в комнате и
+публичны**; ведущий задаёт темп очереди (таймера нет). Очередь **конечна — она
+не зацикливается**.
 
-| # | Do this (REST) | Expect (event) | Audience | How to verify |
+| # | Сделай это (REST) | Ожидай (событие) | Аудитория | Как проверить |
 |---|---|---|---|---|
-| F1 | `POST /api/rooms/:code/defense/start` *(`X-Host-Token`)* | `defense:started` (with the full `order`), then `defense:team-started` (first presenter) | room | Stage → `PRESENTATION_DEFENSE`. `order` is the participating teams by ascending turn order. |
-| F2 | `POST /api/rooms/:code/defense/finish-presenter` (or `…/skip-presenter`) *(`X-Host-Token`)* | `defense:team-finished` (or `defense:team-skipped`), then `defense:team-started` (next) | room | One per team. The only difference between finish and skip is the event name; the advance is identical. |
-| F3 | finish/skip the **last** presenter | `defense:finished` `{ nextStage: EVALUATION }` (in place of `team-started`) | room | The room moves itself to `EVALUATION`. Cross-check `GET /defense/state`. |
+| F1 | `POST /api/rooms/:code/defense/start` *(`X-Host-Token`)* | `defense:started` (с полным `order`), затем `defense:team-started` (первый презентующий) | комната | Стадия → `PRESENTATION_DEFENSE`. `order` — участвующие команды по возрастанию порядка хода. |
+| F2 | `POST /api/rooms/:code/defense/finish-presenter` (или `…/skip-presenter`) *(`X-Host-Token`)* | `defense:team-finished` (или `defense:team-skipped`), затем `defense:team-started` (следующий) | комната | По одному на команду. Единственная разница между finish и skip — имя события; продвижение идентично. |
+| F3 | заверши/пропусти **последнего** презентующего | `defense:finished` `{ nextStage: EVALUATION }` (вместо `team-started`) | комната | Комната сама переходит в `EVALUATION`. Сверь `GET /defense/state`. |
 
 ---
 
-## G · Evaluation & results (§16.8) — canon §22 scenarios 20–21
+## G · Оценивание и результаты (§16.8) — сценарии канона §22 20–21
 
-Scores stay **secret** until results: no collection event carries a number.
+Очки остаются **секретными** до результатов: ни одно событие сбора не несёт
+числа.
 
-| # | Canon §22 scenario | Do this (REST) | Expect (event) | Audience | How to verify |
+| # | Сценарий канона §22 | Сделай это (REST) | Ожидай (событие) | Аудитория | Как проверить |
 |---|---|---|---|---|---|
-| 20 | оценки отправлены (evaluations submitted) | `POST /api/rooms/:code/evaluation/team` *(captain)* / `…/evaluation/host` *(`X-Host-Token`)*; then `…/team/confirm` / `…/host/confirm` | `score-submitted` then `progress-updated` (on submit); `score-confirmed` then `progress-updated` (on confirm) | room | **No payload carries a numeric score** — only ids, the `created` flag, and `{ submitted, confirmed, expected }` counts. Your own numbers come back **only** in the REST reply. A team scoring itself is rejected (403). |
-| 21 | результаты рассчитаны (results calculated) | `POST /api/rooms/:code/evaluation/results` *(`X-Host-Token`)* | `completed`, then `results-calculated` | room | Both fire **after commit**, in this order. `completed` = `{ stage: RESULTS, status: FINISHED }`; `results-calculated` carries the public leaderboard aggregates (individual evaluator scores stay private). Cross-check `GET /evaluation/results`. |
+| 20 | оценки отправлены | `POST /api/rooms/:code/evaluation/team` *(капитан)* / `…/evaluation/host` *(`X-Host-Token`)*; затем `…/team/confirm` / `…/host/confirm` | `score-submitted` затем `progress-updated` (на отправке); `score-confirmed` затем `progress-updated` (на подтверждении) | комната | **Ни один payload не несёт числовой балл** — только id, флаг `created` и счётчики `{ submitted, confirmed, expected }`. Твои собственные числа возвращаются **только** в REST-ответе. Команда, оценивающая саму себя, отклоняется (403). |
+| 21 | результаты рассчитаны | `POST /api/rooms/:code/evaluation/results` *(`X-Host-Token`)* | `completed`, затем `results-calculated` | комната | Оба срабатывают **после коммита**, в этом порядке. `completed` = `{ stage: RESULTS, status: FINISHED }`; `results-calculated` несёт публичные агрегаты таблицы лидеров (индивидуальные баллы оценщиков остаются приватными). Сверь `GET /evaluation/results`. |
 
-> Reserved here (never arrives): `results-shown` — a UI cue with no server
-> trigger; the leaderboard ships via `results-calculated` / `GET results`.
+> Зарезервировано здесь (никогда не приходит): `results-shown` — UI-подсказка без
+> серверного триггера; таблица лидеров доставляется через `results-calculated` /
+> `GET results`.
 
 ---
 
-## §22 coverage matrix
+## Матрица покрытия §22
 
-Every bullet of the plan's §22 "WebSocket-тестирование" list, mapped to the real
-event(s). The canon enumerates **21 bullets** (commonly referred to as "the 20
-manual scenarios"); all 21 are covered above and listed here. Audience is the
-**implemented** audience (verified against [realtime-events.md](realtime-events.md)
-and the event constants in `src/game-session/application/events/`).
+Каждый буллет списка §22 «WebSocket-тестирование» плана, сопоставленный с
+реальным событием (событиями). Канон перечисляет **21 буллет** (обычно их
+называют «20 ручных сценариев»); все 21 покрыты выше и перечислены здесь.
+Аудитория — это **реализованная** аудитория (выверена против
+[realtime-events.md](realtime-events.md) и констант событий в
+`src/game-session/application/events/`).
 
-| § | Canon §22 bullet | Real event(s) | Audience | Checklist row |
+| § | Буллет канона §22 | Реальное событие (события) | Аудитория | Строка чеклиста |
 |---|---|---|---|---|
-| 1 | ведущий создал комнату | *(REST only; `room-state` on host connect)* | originating | §B-1 |
-| 2 | игроки подключились | `player-joined` | room | §B-2 |
-| 3 | команда создана | `team-created` (+ `game-stage-changed`) | room | §B-3 |
-| 4 | капитан назначен | *(no event — `team-created.captain` / `team-updated`)* | room | §B-4 |
-| 5 | тема выбрана | `team-topic-selected` | room | §B-5 |
-| 6 | команды готовы | `team-ready-changed` (+ `game-can-start-changed`) | room | §B-6 |
-| 7 | игра стартовала | `game-started` (+4 in the burst) | room | §B-7 |
-| 8 | вопрос выбран | `cell-selection-requested` | **host-only** | §C-8 |
-| 9 | ведущий подтвердил | `cell-selection-approved`, `question-opened`, `question-timer-started` | room | §C-9 |
-| 10 | ответ принят | `answer-submitted` → `answer-accepted` | room | §C-10 |
-| 11 | очки обновились | `score-changed` (positive delta) | room | §C-11 |
-| 12 | ячейка заблокировалась | `cell-blocked` (+ `board-state-updated`) | room | §C-12 |
-| 13 | ход перешёл | `game-turn-changed` | room | §C-13 |
-| 14 | магазин открылся | `shop-opened` / `shop-final-opened` | room | §D-14 |
-| 15 | товар куплен | `shop-item-purchased` (+ `shop-item-unavailable`, `shop-state-updated`, `score-changed` −δ) | room | §D-15 |
-| 16 | инвентарь обновился | `inventory-updated` | **team-only** | §D-16 |
-| 17 | презентация загружена | `submission-uploaded` / `submission-replaced` | room | §E-17 |
-| 18 | файл появился у всех | `files-updated` | room | §E-18 |
-| 19 | просрочка дала штраф | `submission-late` | room | §E-19 |
-| 20 | оценки отправлены | `score-submitted` → `progress-updated` (+ `score-confirmed`) | room | §G-20 |
-| 21 | результаты рассчитаны | `completed` → `results-calculated` | room | §G-21 |
+| 1 | ведущий создал комнату | *(только REST; `room-state` на подключении ведущего)* | только отправителю | §B-1 |
+| 2 | игроки подключились | `player-joined` | комната | §B-2 |
+| 3 | команда создана | `team-created` (+ `game-stage-changed`) | комната | §B-3 |
+| 4 | капитан назначен | *(нет события — `team-created.captain` / `team-updated`)* | комната | §B-4 |
+| 5 | тема выбрана | `team-topic-selected` | комната | §B-5 |
+| 6 | команды готовы | `team-ready-changed` (+ `game-can-start-changed`) | комната | §B-6 |
+| 7 | игра стартовала | `game-started` (+4 в залпе) | комната | §B-7 |
+| 8 | вопрос выбран | `cell-selection-requested` | **только ведущему** | §C-8 |
+| 9 | ведущий подтвердил | `cell-selection-approved`, `question-opened`, `question-timer-started` | комната | §C-9 |
+| 10 | ответ принят | `answer-submitted` → `answer-accepted` | комната | §C-10 |
+| 11 | очки обновились | `score-changed` (положительный delta) | комната | §C-11 |
+| 12 | ячейка заблокировалась | `cell-blocked` (+ `board-state-updated`) | комната | §C-12 |
+| 13 | ход перешёл | `game-turn-changed` | комната | §C-13 |
+| 14 | магазин открылся | `shop-opened` / `shop-final-opened` | комната | §D-14 |
+| 15 | товар куплен | `shop-item-purchased` (+ `shop-item-unavailable`, `shop-state-updated`, `score-changed` −δ) | комната | §D-15 |
+| 16 | инвентарь обновился | `inventory-updated` | **только команде** | §D-16 |
+| 17 | презентация загружена | `submission-uploaded` / `submission-replaced` | комната | §E-17 |
+| 18 | файл появился у всех | `files-updated` | комната | §E-18 |
+| 19 | просрочка дала штраф | `submission-late` | комната | §E-19 |
+| 20 | оценки отправлены | `score-submitted` → `progress-updated` (+ `score-confirmed`) | комната | §G-20 |
+| 21 | результаты рассчитаны | `completed` → `results-calculated` | комната | §G-21 |
 
-**Two canon bullets have no dedicated event** — both are real findings, not gaps
-in the build:
+**У двух буллетов канона нет выделенного события** — оба это реальные находки, а
+не пробелы в сборке:
 
-- **#1 "host created room"** — room creation is REST (`POST /api/rooms`); no
-  socket exists at that instant, so there is no `room-created` broadcast. The
-  observable WS effect is the `room-state` snapshot the host receives on connect.
-- **#4 "captain assigned"** — there is no `captain-assigned` event. The first
-  player to create a team *is* the captain, carried in `team-created.captain`; a
-  later captain change rides `team-updated`. Do not wait for a standalone event.
+- **#1 «ведущий создал комнату»** — создание комнаты это REST (`POST /api/rooms`); в
+  этот момент сокета не существует, поэтому рассылки `room-created` нет.
+  Наблюдаемый WS-эффект — снимок `room-state`, который ведущий получает при
+  подключении.
+- **#4 «капитан назначен»** — события `captain-assigned` нет. Первый игрок,
+  создавший команду, *и есть* капитан, он несётся в `team-created.captain`; более
+  поздняя смена капитана едет на `team-updated`. Не жди отдельного события.
 
-## Reserved / superseded events — never wait for these
+## Зарезервированные / вытесненные события — никогда их не жди
 
-These names exist in the catalog but are **never emitted today**, so do not wire
-a handler that blocks on them (full rationale in
-[frontend-guide → §5.5](frontend-guide.md#55--gotchas)):
+Эти имена есть в каталоге, но **сегодня никогда не эмитируются**, поэтому не
+заводи обработчик, который на них блокируется (полное обоснование в
+[frontend-guide → §5.5](frontend-guide.md#55--подводные-камни)):
 
 `cell-selected`, `player-left`, `shop-purchase-rejected`, `requirements-updated`,
 `timer-ended`, `submission-status-changed`, `results-shown`.
 
-Notably: a **rejected purchase** is the REST **409**, not a socket event; the
-**answer / shop / preparation timers** surface via their `GET` reads, never a
-pushed `timer-ended`.
+В частности: **отклонённая покупка** — это REST **409**, не сокет-событие;
+**таймеры ответа / магазина / подготовки** проявляются через свои `GET`-чтения,
+никогда не как пушнутый `timer-ended`.
 
-## Counts (as implemented today)
+## Счётчики (как реализовано сегодня)
 
-**57** distinct server→client events are emitted, **7** further catalog names are
-reserved/superseded (listed above), and **2** client→server commands exist
-(`join-room`, `leave-room`). The authoritative list is
+**57** различных событий server→client эмитируются, ещё **7** имён каталога
+зарезервированы/вытеснены (перечислены выше), и существуют **2** команды
+client→server (`join-room`, `leave-room`). Авторитетный список —
 [realtime-events.md](realtime-events.md).
 
 ---
 
-## Sign-off
+## Подписание
 
-A run is **complete** when every row in §A–§G has been observed with the correct
-audience. A row **fails** if its event does not arrive, arrives at the wrong
-audience (e.g. a host-only or team-only event leaks room-wide), or carries
-content it must not (a `correctAnswer` or a QR `publicUrl` in a room-wide
-payload). Record date, build (`git rev-parse --short HEAD`), and any failing row.
+Прогон **завершён**, когда каждая строка из §A–§G наблюдалась с правильной
+аудиторией. Строка **не проходит**, если её событие не приходит, приходит не той
+аудитории (например, событие только ведущему или только команде утекает всем в
+комнате) или несёт содержимое, которое не должно (`correctAnswer` или `publicUrl`
+для QR в payload, идущем всем в комнате). Зафиксируй дату, сборку
+(`git rev-parse --short HEAD`) и любую непрошедшую строку.
